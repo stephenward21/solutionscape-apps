@@ -128,7 +128,7 @@ export default function EvidenceSync({ hasEnvKey }: EvidenceSyncProps) {
         formData.append("workspace", workspace);
         formData.append("controlId", String(selectedControl.id));
         formData.append("controlName", selectedControl.name);
-        formData.append("controlCode", selectedControl.code);
+        formData.append("controlCode", selectedControl.code ?? "");
         formData.append("description", description);
         formData.append("collectedAt", collectedAt);
         formData.append("file", file);

@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import type { DrataFramework, DrataControl } from "@/lib/types";
+import type { DrataFramework, DrataControl, ControlStatus } from "@/lib/types";
+import { getControlStatus } from "@/lib/types";
 
 interface ControlBrowserProps {
   workspace: string;
@@ -11,7 +12,7 @@ interface ControlBrowserProps {
   onControlsLoaded?: (controls: DrataControl[]) => void;
 }
 
-const STATUS_COLORS: Record<DrataControl["status"], string> = {
+const STATUS_COLORS: Record<ControlStatus, string> = {
   PASSING: "bg-green-500",
   FAILING: "bg-red-500",
   NEEDS_ATTENTION: "bg-yellow-500",
@@ -34,7 +35,7 @@ export default function ControlBrowser({
   // Set default framework when frameworks load
   useEffect(() => {
     if (frameworks.length > 0 && !activeFramework) {
-      setActiveFramework(frameworks[0]);
+      setActiveFramework(frameworks[0] ?? null);
     }
     if (frameworks.length === 0) {
       setActiveFramework(null);
@@ -55,7 +56,11 @@ export default function ControlBrowser({
 
     setLoading(true);
     try {
-      const params = new URLSearchParams({ workspace, frameworkSlug: activeFramework.slug });
+      // v2: pass frameworkName (not frameworkSlug) — filtering is client-side in the API route
+      const params = new URLSearchParams({
+        workspace,
+        frameworkName: activeFramework.name,
+      });
       if (debouncedSearch) params.set("search", debouncedSearch);
 
       const res = await fetch(`/api/controls?${params.toString()}`);
@@ -69,7 +74,7 @@ export default function ControlBrowser({
     } finally {
       setLoading(false);
     }
-  }, [workspace, activeFramework, debouncedSearch]);
+  }, [workspace, activeFramework, debouncedSearch, onControlsLoaded]);
 
   useEffect(() => {
     void loadControls();
@@ -117,39 +122,46 @@ export default function ControlBrowser({
         )}
         {!loading && controls.length === 0 && (
           <div className="text-center py-4 text-sm text-slate-500">
-            {frameworks.length === 0 ? "Select a workspace to load controls" : "No controls found"}
+            {frameworks.length === 0
+              ? "Select a workspace to load controls"
+              : "No controls found"}
           </div>
         )}
         {!loading &&
-          controls.map((control) => (
-            <button
-              key={control.id}
-              onClick={() => onSelectControl(control)}
-              className={`w-full text-left px-3 py-2 rounded-md border transition-colors group ${
-                selectedControl?.id === control.id
-                  ? "bg-blue-50 border-blue-300 text-blue-900"
-                  : "bg-white border-slate-200 hover:bg-slate-50 text-slate-800"
-              }`}
-            >
-              <div className="flex items-start gap-2">
-                <span
-                  className={`mt-1.5 w-2 h-2 rounded-full flex-shrink-0 ${STATUS_COLORS[control.status] ?? "bg-slate-400"}`}
-                />
-                <div className="min-w-0">
+          controls.map((control) => {
+            const statusColor = STATUS_COLORS[getControlStatus(control)];
+            return (
+              <button
+                key={control.id}
+                onClick={() => onSelectControl(control)}
+                className={`w-full text-left px-3 py-2 rounded-md border transition-colors group ${
+                  selectedControl?.id === control.id
+                    ? "bg-blue-50 border-blue-300 text-blue-900"
+                    : "bg-white border-slate-200 hover:bg-slate-50 text-slate-800"
+                }`}
+              >
+                <div className="flex items-start gap-2">
                   <span
-                    className={`inline-block text-xs font-mono font-semibold px-1.5 py-0.5 rounded mr-1.5 ${
-                      selectedControl?.id === control.id
-                        ? "bg-blue-200 text-blue-800"
-                        : "bg-slate-100 text-slate-600"
-                    }`}
-                  >
-                    {control.code}
-                  </span>
-                  <span className="text-sm leading-tight">{control.name}</span>
+                    className={`mt-1.5 w-2 h-2 rounded-full flex-shrink-0 ${statusColor}`}
+                  />
+                  <div className="min-w-0">
+                    {control.code && (
+                      <span
+                        className={`inline-block text-xs font-mono font-semibold px-1.5 py-0.5 rounded mr-1.5 ${
+                          selectedControl?.id === control.id
+                            ? "bg-blue-200 text-blue-800"
+                            : "bg-slate-100 text-slate-600"
+                        }`}
+                      >
+                        {control.code}
+                      </span>
+                    )}
+                    <span className="text-sm leading-tight">{control.name}</span>
+                  </div>
                 </div>
-              </div>
-            </button>
-          ))}
+              </button>
+            );
+          })}
       </div>
     </div>
   );

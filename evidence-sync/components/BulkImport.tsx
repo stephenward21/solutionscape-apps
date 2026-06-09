@@ -29,8 +29,10 @@ export default function BulkImport({ workspace, controls, onClose, onComplete }:
   function downloadTemplate() {
     const header = "fileName,controlId,description,collectedAt";
     const exampleRows = controls.slice(0, 3).map(
-      (c) =>
-        `example-${c.code.replace(".", "-").toLowerCase()}.pdf,${c.id},"Evidence for ${c.name}",${new Date().toISOString().split("T")[0]}`
+      (c) => {
+        const code = (c.code ?? String(c.id)).replace(".", "-").toLowerCase();
+        return `example-${code}.pdf,${c.id},"Evidence for ${c.name}",${new Date().toISOString().split("T")[0]}`;
+      }
     );
     const csv = [header, ...exampleRows].join("\n");
     const blob = new Blob([csv], { type: "text/csv" });

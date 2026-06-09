@@ -1,42 +1,52 @@
 "use client";
 
 import { useState, useMemo } from "react";
-import type { DrataControl } from "@/lib/types";
+import type { DrataControl, ControlStatus } from "@/lib/types";
+import { getControlStatus } from "@/lib/types";
 
 interface Props {
   controls: DrataControl[];
 }
 
-const STATUS_ORDER: Record<string, number> = {
+const STATUS_ORDER: Record<ControlStatus, number> = {
   FAILING: 0,
   NEEDS_ATTENTION: 1,
   PASSING: 2,
   NOT_APPLICABLE: 3,
 };
 
-function StatusBadge({ status }: { status: string }) {
-  const classes: Record<string, string> = {
+function StatusBadge({ status }: { status: ControlStatus }) {
+  const classes: Record<ControlStatus, string> = {
     FAILING: "bg-red-100 text-red-700",
     NEEDS_ATTENTION: "bg-amber-100 text-amber-700",
     PASSING: "bg-green-100 text-green-700",
     NOT_APPLICABLE: "bg-slate-100 text-slate-500",
   };
-  const labels: Record<string, string> = {
+  const labels: Record<ControlStatus, string> = {
     FAILING: "Failing",
     NEEDS_ATTENTION: "Needs Attention",
     PASSING: "Passing",
     NOT_APPLICABLE: "N/A",
   };
-  const cls = classes[status] ?? "bg-slate-100 text-slate-600";
   return (
-    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${cls}`}>
-      {labels[status] ?? status}
+    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${classes[status]}`}>
+      {labels[status]}
     </span>
   );
 }
 
 type SortCol = "code" | "name" | "status" | "framework" | "owner";
 type SortDir = "asc" | "desc";
+
+function ownerName(c: DrataControl): string {
+  const o = c.owners?.[0];
+  if (!o) return "";
+  return [o.firstName, o.lastName].filter(Boolean).join(" ") || o.email || "";
+}
+
+function frameworkLabel(c: DrataControl): string {
+  return c.frameworkTags?.join(", ") ?? "";
+}
 
 export default function ControlsTable({ controls }: Props) {
   const [search, setSearch] = useState("");
@@ -73,14 +83,13 @@ export default function ControlsTable({ controls }: Props) {
           cmp = a.name.localeCompare(b.name);
           break;
         case "status":
-          cmp =
-            (STATUS_ORDER[a.status] ?? 99) - (STATUS_ORDER[b.status] ?? 99);
+          cmp = STATUS_ORDER[getControlStatus(a)] - STATUS_ORDER[getControlStatus(b)];
           break;
         case "framework":
-          cmp = (a.frameworkSlug ?? "").localeCompare(b.frameworkSlug ?? "");
+          cmp = frameworkLabel(a).localeCompare(frameworkLabel(b));
           break;
         case "owner":
-          cmp = (a.owner?.name ?? "").localeCompare(b.owner?.name ?? "");
+          cmp = ownerName(a).localeCompare(ownerName(b));
           break;
       }
       return sortDir === "asc" ? cmp : -cmp;
@@ -138,22 +147,19 @@ export default function ControlsTable({ controls }: Props) {
                   <span className="line-clamp-2">{c.name}</span>
                 </td>
                 <td className="px-4 py-2.5 whitespace-nowrap">
-                  <StatusBadge status={c.status} />
+                  <StatusBadge status={getControlStatus(c)} />
                 </td>
-                <td className="px-4 py-2.5 text-slate-600 whitespace-nowrap text-xs uppercase tracking-wide">
-                  {c.frameworkSlug ?? "—"}
+                <td className="px-4 py-2.5 text-slate-600 whitespace-nowrap text-xs">
+                  {frameworkLabel(c) || "—"}
                 </td>
                 <td className="px-4 py-2.5 text-slate-600 whitespace-nowrap">
-                  {c.owner?.name ?? "—"}
+                  {ownerName(c) || "—"}
                 </td>
               </tr>
             ))}
             {sorted.length === 0 && (
               <tr>
-                <td
-                  colSpan={5}
-                  className="px-4 py-8 text-center text-slate-400 text-sm"
-                >
+                <td colSpan={5} className="px-4 py-8 text-center text-slate-400 text-sm">
                   No controls found
                 </td>
               </tr>

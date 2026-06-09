@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getClient } from "@/lib/drata-client";
+import { getControlStatus } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
@@ -9,15 +10,15 @@ export async function GET(
 ): Promise<NextResponse> {
   const workspaceName = decodeURIComponent(params.workspace);
   const { searchParams } = new URL(req.url);
-  const frameworkSlug = searchParams.get("frameworkSlug") ?? undefined;
   const statusFilter = searchParams.get("status") ?? undefined;
 
   try {
     const client = getClient(workspaceName);
-    let controls = await client.getControls(frameworkSlug ? { frameworkSlug } : undefined);
+    let controls = await client.getControls();
 
+    // v2: filter by derived status (from boolean flags)
     if (statusFilter) {
-      controls = controls.filter((c) => c.status === statusFilter);
+      controls = controls.filter((c) => getControlStatus(c) === statusFilter);
     }
 
     return NextResponse.json({ controls });

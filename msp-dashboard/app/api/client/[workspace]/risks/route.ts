@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getClient } from "@/lib/drata-client";
+import { getRiskSeverity } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
@@ -16,8 +17,9 @@ export async function GET(
     const client = getClient(workspaceName);
     let risks = await client.getRisks();
 
+    // v2: severity is derived from risk.score, not a string field
     if (severityFilter) {
-      risks = risks.filter((r) => r.severity === severityFilter);
+      risks = risks.filter((r) => getRiskSeverity(r) === severityFilter);
     }
     if (statusFilter) {
       risks = risks.filter((r) => r.status === statusFilter);

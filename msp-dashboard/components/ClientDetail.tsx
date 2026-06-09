@@ -9,6 +9,7 @@ import type {
   DrataRisk,
   DrataEvent,
 } from "@/lib/types";
+import { getControlStatus, getRiskSeverity } from "@/lib/types";
 import { getOverdueTasks, getUpcomingTasks } from "@/lib/health-calculator";
 import RAGBadge from "./RAGBadge";
 import FrameworkBar from "./FrameworkBar";
@@ -198,19 +199,22 @@ export default function ClientDetail({ workspaceName }: Props) {
 
   // Derive filtered controls
   const filteredControls = controls.filter((c) => {
-    const statusMatch = controlFilter === "all" || c.status === controlFilter;
+    const statusMatch = controlFilter === "all" || getControlStatus(c) === controlFilter;
     const frameworkMatch =
       controlFrameworkFilter === "all" ||
-      c.frameworkSlug === controlFrameworkFilter;
+      (c.frameworkTags?.includes(controlFrameworkFilter) ?? false);
     return statusMatch && frameworkMatch;
   });
 
   const frameworks = snapshot?.frameworks ?? [];
-  const frameworkSlugs = Array.from(new Set(controls.map((c) => c.frameworkSlug).filter((s): s is string => Boolean(s))));
+  // Collect unique framework tag names across all controls for the filter dropdown
+  const frameworkNames = Array.from(
+    new Set(controls.flatMap((c) => c.frameworkTags ?? []))
+  ).filter(Boolean);
 
-  // Filtered risks
+  // Filtered risks (use derived severity from score)
   const filteredRisks = risks.filter(
-    (r) => riskSeverityFilter === "all" || r.severity === riskSeverityFilter
+    (r) => riskSeverityFilter === "all" || getRiskSeverity(r) === riskSeverityFilter
   );
 
   // Tasks split
@@ -390,16 +394,16 @@ export default function ClientDetail({ workspaceName }: Props) {
               ))}
             </div>
             {/* Framework filter */}
-            {frameworkSlugs.length > 0 && (
+            {frameworkNames.length > 0 && (
               <select
                 value={controlFrameworkFilter}
                 onChange={(e) => setControlFrameworkFilter(e.target.value)}
                 className="text-sm border border-slate-200 rounded-lg px-2 py-1.5 bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
                 <option value="all">All Frameworks</option>
-                {frameworkSlugs.map((slug) => (
-                  <option key={slug} value={slug}>
-                    {slug}
+                {frameworkNames.map((name) => (
+                  <option key={name} value={name}>
+                    {name}
                   </option>
                 ))}
               </select>

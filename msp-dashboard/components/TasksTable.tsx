@@ -42,16 +42,19 @@ function formatDueDate(dueDate: string | undefined, type: "overdue" | "upcoming"
 
 function StatusBadge({ status }: { status: string }) {
   const classes: Record<string, string> = {
-    OPEN: "bg-blue-100 text-blue-700",
-    IN_PROGRESS: "bg-amber-100 text-amber-700",
-    COMPLETE: "bg-green-100 text-green-700",
-    DISMISSED: "bg-slate-100 text-slate-500",
+    INCOMPLETE: "bg-blue-100 text-blue-700",
+    PAST_DUE: "bg-red-100 text-red-700",
+    COMPLETED: "bg-green-100 text-green-700",
+  };
+  const labels: Record<string, string> = {
+    INCOMPLETE: "Incomplete",
+    PAST_DUE: "Past Due",
+    COMPLETED: "Completed",
   };
   const cls = classes[status] ?? "bg-slate-100 text-slate-600";
-  const label = status.replace("_", " ");
   return (
     <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${cls}`}>
-      {label}
+      {labels[status] ?? status}
     </span>
   );
 }
@@ -96,19 +99,19 @@ export default function TasksTable({ tasks, type }: Props) {
                 className={type === "overdue" ? "bg-red-50/50" : "hover:bg-slate-50"}
               >
                 <td className="px-4 py-2.5 text-slate-800 max-w-xs">
-                  <span className="line-clamp-2">{t.name}</span>
+                  <span className="line-clamp-2">{t.title}</span>
                 </td>
                 <td className={`px-4 py-2.5 whitespace-nowrap ${className}`}>
                   {text}
                 </td>
                 <td className="px-4 py-2.5 text-slate-600 whitespace-nowrap">
-                  {t.assignee?.name ?? "—"}
+                  {t.assignee ? [t.assignee.firstName, t.assignee.lastName].filter(Boolean).join(" ") || t.assignee.email || "—" : "—"}
                 </td>
                 <td className="px-4 py-2.5 font-mono text-xs text-slate-500 whitespace-nowrap">
-                  {t.controlCode ?? "—"}
+                  {t.controls?.[0]?.code ?? "—"}
                 </td>
                 <td className="px-4 py-2.5 whitespace-nowrap">
-                  <StatusBadge status={t.status} />
+                  <StatusBadge status={t.status ?? "INCOMPLETE"} />
                 </td>
               </tr>
             );

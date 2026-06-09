@@ -1,4 +1,5 @@
 import type { WorkspaceSnapshot } from "./types";
+import { getControlStatus } from "./types";
 import { getClient } from "./drata-client";
 import {
   calculateFrameworkHealth,
@@ -31,16 +32,17 @@ export async function buildFreshSnapshot(
   const overallScore = calculateOverallScore(frameworkHealthList);
   const ragStatus = getRagStatus(overallScore);
 
-  const passing = controls.filter((c) => c.status === "PASSING").length;
-  const failing = controls.filter((c) => c.status === "FAILING").length;
+  const passing = controls.filter((c) => getControlStatus(c) === "PASSING").length;
+  const failing = controls.filter((c) => getControlStatus(c) === "FAILING").length;
   const needsAttention = controls.filter(
-    (c) => c.status === "NEEDS_ATTENTION"
+    (c) => getControlStatus(c) === "NEEDS_ATTENTION"
   ).length;
 
   const overdue = getOverdueTasks(tasks);
   const upcoming = getUpcomingTasks(tasks);
   const { high, critical } = countOpenRisksBySeverity(risks);
-  const failingTests = tests.filter((t) => t.status === "FAILING").length;
+  // v2 monitoring tests use checkResultStatus
+  const failingTests = tests.filter((t) => t.checkResultStatus === "FAILED").length;
 
   // Load existing history so it can be preserved by saveSnapshot
   const existing = loadSnapshot(workspaceName);

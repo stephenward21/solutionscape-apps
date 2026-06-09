@@ -8,30 +8,29 @@ import type {
   Workspace,
 } from "./types";
 
-const BASE_URL = "https://public-api.drata.com/public";
+const BASE_URL = "https://public-api.drata.com/public/v2";
 
-type PaginatedResponse<T> = { data: T[]; totalCount: number } | T[];
-
-function extractData<T>(response: PaginatedResponse<T>): { items: T[]; total: number } {
-  if (Array.isArray(response)) {
-    return { items: response, total: response.length };
-  }
-  return { items: response.data, total: response.totalCount };
+interface CursorResponse<T> {
+  data: T[];
+  pagination?: { cursor?: string | null; totalCount?: number };
 }
 
 export class DrataClient {
   private readonly apiKey: string;
+  private cachedWorkspaceId?: number;
+  private cachedRiskRegisterId?: number;
 
   constructor(apiKey: string) {
     this.apiKey = apiKey;
   }
 
-  private async fetch<T>(path: string, params?: Record<string, string>): Promise<T> {
+  private async request<T>(
+    path: string,
+    params: Record<string, string | number | boolean | undefined> = {}
+  ): Promise<T> {
     const url = new URL(`${BASE_URL}${path}`);
-    if (params) {
-      for (const [k, v] of Object.entries(params)) {
-        url.searchParams.set(k, v);
-      }
+    for (const [key, value] of Object.entries(params)) {
+      if (value !== undefined) url.searchParams.set(key, String(value));
     }
     const res = await fetch(url.toString(), {
       headers: {
@@ -41,109 +40,95 @@ export class DrataClient {
       cache: "no-store",
     });
     if (!res.ok) {
-      throw new Error(`Drata API error ${res.status} for ${path}: ${res.statusText}`);
+      const text = await res.text().catch(() => res.statusText);
+      throw new Error(`Drata API error ${res.status} for ${path}: ${text}`);
     }
     return res.json() as Promise<T>;
   }
 
-  async getFrameworks(): Promise<DrataFramework[]> {
-    const response = await this.fetch<PaginatedResponse<DrataFramework>>("/frameworks");
-    return extractData(response).items;
+  /** Fetch all pages of a cursor-paginated endpoint. */
+  private async fetchAll<T>(path: string, max = 1000): Promise<T[]> {
+    const items: T[] = [];
+    let cursor: string | null | undefined = undefined;
+    do {
+      const params: Record<string, string | number | boolean | undefined> = {
+        size: 100,
+        includeTotalCount: true,
+        ...(cursor ? { cursor } : {}),
+      };
+      const result = await this.request<CursorResponse<T>>(path, params);
+      const page = result.data ?? [];
+      items.push(...page);
+      cursor = result.pagination?.cursor ?? null;
+    } while (cursor && items.length < max);
+    return items;
   }
 
-  async getControls(opts?: { frameworkSlug?: string }): Promise<DrataControl[]> {
-    const allControls: DrataControl[] = [];
-    const pageSize = 100;
-    let page = 1;
-    const max = 1000;
+  private async resolveWorkspaceId(): Promise<number> {
+    if (this.cachedWorkspaceId) return this.cachedWorkspaceId;
+    const result = await this.request<CursorResponse<{ id: number; primary?: boolean }>>(
+      "/workspaces",
+      { size: 50, includeTotalCount: true }
+    );
+    const workspaces = result.data ?? [];
+    if (!workspaces.length) throw new Error("No workspaces found in this account");
+    const primary = workspaces.find((w) => w.primary) ?? workspaces[0];
+    if (!primary) throw new Error("No workspaces found in this account");
+    this.cachedWorkspaceId = primary.id;
+    return this.cachedWorkspaceId;
+  }
 
-    while (allControls.length < max) {
-      const params: Record<string, string> = {
-        page: String(page),
-        pageSize: String(pageSize),
-      };
-      if (opts?.frameworkSlug) {
-        params.frameworkSlug = opts.frameworkSlug;
-      }
-      const response = await this.fetch<PaginatedResponse<DrataControl>>("/controls", params);
-      const { items, total } = extractData(response);
-      allControls.push(...items);
-      if (items.length < pageSize || allControls.length >= total) break;
-      page++;
-    }
+  private async resolveRiskRegisterId(): Promise<number> {
+    if (this.cachedRiskRegisterId) return this.cachedRiskRegisterId;
+    const result = await this.request<CursorResponse<{ id: number }>>(
+      "/risk-registers",
+      { size: 1, includeTotalCount: true }
+    );
+    const registers = result.data ?? [];
+    if (!registers.length) throw new Error("No risk registers found");
+    const first = registers[0];
+    if (!first) throw new Error("No risk registers found");
+    this.cachedRiskRegisterId = first.id;
+    return this.cachedRiskRegisterId;
+  }
 
-    return allControls;
+  async getFrameworks(): Promise<DrataFramework[]> {
+    const wsId = await this.resolveWorkspaceId();
+    return this.fetchAll<DrataFramework>(`/workspaces/${wsId}/frameworks`);
+  }
+
+  async getControls(): Promise<DrataControl[]> {
+    const wsId = await this.resolveWorkspaceId();
+    return this.fetchAll<DrataControl>(`/workspaces/${wsId}/controls`);
   }
 
   async getTasks(): Promise<DrataTask[]> {
-    const allTasks: DrataTask[] = [];
-    const pageSize = 100;
-    let page = 1;
-    const max = 500;
-
-    while (allTasks.length < max) {
-      const response = await this.fetch<PaginatedResponse<DrataTask>>("/tasks", {
-        page: String(page),
-        pageSize: String(pageSize),
-      });
-      const { items, total } = extractData(response);
-      allTasks.push(...items);
-      if (items.length < pageSize || allTasks.length >= total) break;
-      page++;
-    }
-
-    return allTasks;
+    const wsId = await this.resolveWorkspaceId();
+    return this.fetchAll<DrataTask>(`/workspaces/${wsId}/tasks`, 500);
   }
 
   async getRisks(): Promise<DrataRisk[]> {
-    const allRisks: DrataRisk[] = [];
-    const pageSize = 100;
-    let page = 1;
-    const max = 500;
-
-    while (allRisks.length < max) {
-      const response = await this.fetch<PaginatedResponse<DrataRisk>>("/risks", {
-        page: String(page),
-        pageSize: String(pageSize),
-      });
-      const { items, total } = extractData(response);
-      allRisks.push(...items);
-      if (items.length < pageSize || allRisks.length >= total) break;
-      page++;
-    }
-
-    return allRisks;
+    const regId = await this.resolveRiskRegisterId();
+    return this.fetchAll<DrataRisk>(`/risk-registers/${regId}/risks`, 500);
   }
 
   async getMonitoringTests(): Promise<DrataMonitoringTest[]> {
-    const allTests: DrataMonitoringTest[] = [];
-    const pageSize = 100;
-    let page = 1;
-    const max = 500;
-
-    while (allTests.length < max) {
-      const response = await this.fetch<PaginatedResponse<DrataMonitoringTest>>(
-        "/monitoring-tests",
-        {
-          page: String(page),
-          pageSize: String(pageSize),
-        }
-      );
-      const { items, total } = extractData(response);
-      allTests.push(...items);
-      if (items.length < pageSize || allTests.length >= total) break;
-      page++;
-    }
-
-    return allTests;
+    const wsId = await this.resolveWorkspaceId();
+    return this.fetchAll<DrataMonitoringTest>(`/workspaces/${wsId}/monitoring-tests`, 500);
   }
 
-  async getEvents(pageSize = 20): Promise<DrataEvent[]> {
-    const response = await this.fetch<PaginatedResponse<DrataEvent>>("/events", {
-      page: "1",
-      pageSize: String(pageSize),
-    });
-    return extractData(response).items;
+  async getEvents(limit = 20): Promise<DrataEvent[]> {
+    // Events endpoint may not be available in all plans — fall back gracefully
+    try {
+      const wsId = await this.resolveWorkspaceId();
+      const result = await this.request<CursorResponse<DrataEvent>>(
+        `/workspaces/${wsId}/events`,
+        { size: limit }
+      );
+      return result.data ?? [];
+    } catch {
+      return [];
+    }
   }
 }
 
@@ -152,33 +137,27 @@ function getWorkspaces(): Workspace[] {
   if (tenantsEnv) {
     try {
       const parsed = JSON.parse(tenantsEnv) as Workspace[];
-      return parsed;
+      if (Array.isArray(parsed)) return parsed;
     } catch {
       throw new Error("DRATA_TENANTS is not valid JSON");
     }
   }
   const singleKey = process.env.DRATA_API_KEY;
-  if (singleKey) {
-    return [{ name: "Default", apiKey: singleKey }];
-  }
+  if (singleKey) return [{ name: "Default", apiKey: singleKey }];
   return [];
 }
 
 export function getClient(workspaceName?: string): DrataClient {
   const workspaces = getWorkspaces();
-  if (workspaces.length === 0) {
+  if (!workspaces.length) {
     throw new Error("No Drata credentials configured. Set DRATA_API_KEY or DRATA_TENANTS.");
   }
-  if (!workspaceName) {
-    return new DrataClient(workspaces[0].apiKey);
+  if (!workspaceName || workspaceName === "Default") {
+    return new DrataClient(workspaces[0]!.apiKey);
   }
-  const workspace = workspaces.find(
-    (w) => w.name.toLowerCase() === workspaceName.toLowerCase()
-  );
-  if (!workspace) {
-    throw new Error(`Workspace "${workspaceName}" not found in configuration`);
-  }
-  return new DrataClient(workspace.apiKey);
+  const ws = workspaces.find((w) => w.name.toLowerCase() === workspaceName.toLowerCase());
+  if (!ws) throw new Error(`Workspace "${workspaceName}" not found in configuration`);
+  return new DrataClient(ws.apiKey);
 }
 
 export function listWorkspaceNames(): string[] {

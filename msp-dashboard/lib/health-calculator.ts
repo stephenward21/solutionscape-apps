@@ -5,49 +5,47 @@ import type {
   DrataRisk,
   FrameworkHealth,
 } from "./types";
+import { getControlStatus, getRiskSeverity, nameToSlug } from "./types";
 
 export function calculateFrameworkHealth(
   controls: DrataControl[],
   framework: DrataFramework
 ): FrameworkHealth {
-  const frameworkControls = controls.filter(
-    (c) => c.frameworkSlug === framework.slug
+  // v2 controls carry frameworkTags: string[] — match by framework name
+  const frameworkControls = controls.filter((c) =>
+    c.frameworkTags?.some(
+      (tag) => tag.toLowerCase() === framework.name.toLowerCase()
+    )
   );
 
-  const passing = frameworkControls.filter((c) => c.status === "PASSING").length;
-  const failing = frameworkControls.filter((c) => c.status === "FAILING").length;
-  const needsAttention = frameworkControls.filter(
-    (c) => c.status === "NEEDS_ATTENTION"
+  const active = frameworkControls.filter((c) => !c.archivedAt);
+  const passing = active.filter((c) => getControlStatus(c) === "PASSING").length;
+  const failing = active.filter((c) => getControlStatus(c) === "FAILING").length;
+  const needsAttention = active.filter(
+    (c) => getControlStatus(c) === "NEEDS_ATTENTION"
   ).length;
-  const total = frameworkControls.filter(
-    (c) => c.status !== "NOT_APPLICABLE"
-  ).length;
-
-  const score = total > 0 ? Math.round((passing / total) * 100) : 0;
+  // Score denominator: only monitored controls (failing + passing)
+  const monitored = passing + failing;
+  const score = monitored > 0 ? Math.round((passing / monitored) * 100) : 0;
 
   return {
     id: framework.id,
     name: framework.name,
-    slug: framework.slug,
+    slug: nameToSlug(framework.name),
     passingCount: passing,
     failingCount: failing,
     needsAttentionCount: needsAttention,
-    totalCount: total,
+    totalCount: active.length,
     score,
   };
 }
 
 export function calculateOverallScore(frameworks: FrameworkHealth[]): number {
-  const relevant = frameworks.filter((f) => f.totalCount > 0);
-  if (relevant.length === 0) return 0;
-
-  const totalWeight = relevant.reduce((sum, f) => sum + f.totalCount, 0);
-  const weightedSum = relevant.reduce(
-    (sum, f) => sum + f.score * f.totalCount,
-    0
-  );
-
-  return totalWeight > 0 ? Math.round(weightedSum / totalWeight) : 0;
+  const relevant = frameworks.filter((f) => f.passingCount + f.failingCount > 0);
+  if (!relevant.length) return 0;
+  const totalWeight = relevant.reduce((s, f) => s + f.passingCount + f.failingCount, 0);
+  const weighted = relevant.reduce((s, f) => s + f.score * (f.passingCount + f.failingCount), 0);
+  return totalWeight > 0 ? Math.round(weighted / totalWeight) : 0;
 }
 
 export function getRagStatus(score: number): "green" | "amber" | "red" {
@@ -56,42 +54,41 @@ export function getRagStatus(score: number): "green" | "amber" | "red" {
   return "red";
 }
 
-const TERMINAL_TASK_STATUSES = new Set(["COMPLETE", "DISMISSED"]);
+const TERMINAL_TASK_STATUSES = new Set(["COMPLETED"]);
 
 export function getOverdueTasks(tasks: DrataTask[]): DrataTask[] {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-
   return tasks.filter((t) => {
+    if (TERMINAL_TASK_STATUSES.has(t.status ?? "")) return false;
+    // v2 marks overdue tasks with PAST_DUE status, but also check date
+    if (t.status === "PAST_DUE") return true;
     if (!t.dueDate) return false;
-    if (TERMINAL_TASK_STATUSES.has(t.status)) return false;
-    const due = new Date(t.dueDate);
-    return due < today;
+    return new Date(t.dueDate) < today;
   });
 }
 
 export function getUpcomingTasks(tasks: DrataTask[]): DrataTask[] {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-  const in30Days = new Date(today);
-  in30Days.setDate(today.getDate() + 30);
-
+  const in30 = new Date(today);
+  in30.setDate(today.getDate() + 30);
   return tasks.filter((t) => {
+    if (TERMINAL_TASK_STATUSES.has(t.status ?? "")) return false;
+    if (t.status === "PAST_DUE") return false;
     if (!t.dueDate) return false;
-    if (TERMINAL_TASK_STATUSES.has(t.status)) return false;
     const due = new Date(t.dueDate);
-    return due >= today && due <= in30Days;
+    return due >= today && due <= in30;
   });
 }
 
 export function countOpenRisksBySeverity(
   risks: DrataRisk[]
 ): { high: number; critical: number } {
-  const CLOSED_STATUSES = new Set(["CLOSED", "ACCEPTED"]);
-  const openRisks = risks.filter((r) => !CLOSED_STATUSES.has(r.status));
-
+  const CLOSED = new Set(["CLOSED", "ARCHIVED"]);
+  const open = risks.filter((r) => !CLOSED.has(r.status ?? ""));
   return {
-    high: openRisks.filter((r) => r.severity === "HIGH").length,
-    critical: openRisks.filter((r) => r.severity === "CRITICAL").length,
+    high: open.filter((r) => getRiskSeverity(r) === "HIGH").length,
+    critical: open.filter((r) => getRiskSeverity(r) === "CRITICAL").length,
   };
 }

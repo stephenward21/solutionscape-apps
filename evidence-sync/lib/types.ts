@@ -6,16 +6,36 @@ export interface Workspace {
 export interface DrataFramework {
   id: number;
   name: string;
-  slug: string; // e.g. "soc2", "iso27001", "hipaa"
+  status?: string;
+  // slug is not returned by the v2 API — derive with nameToSlug()
 }
 
 export interface DrataControl {
   id: number;
   name: string;
-  description: string;
-  code: string; // e.g. "CC6.1"
-  frameworkSlug: string;
-  status: "PASSING" | "FAILING" | "NEEDS_ATTENTION" | "NOT_APPLICABLE";
+  description?: string;
+  code?: string;
+  // v2 uses boolean flags instead of a status string
+  isMonitored?: boolean;
+  hasEvidence?: boolean;
+  isReady?: boolean;
+  hasPassingTest?: boolean;
+  frameworkTags?: string[]; // e.g. ["SOC 2", "ISO 27001:2022"]
+  archivedAt?: string | null;
+  owners?: Array<{ id: number; firstName?: string; lastName?: string; email?: string }>;
+}
+
+export type ControlStatus = "PASSING" | "FAILING" | "NEEDS_ATTENTION" | "NOT_APPLICABLE";
+
+export function getControlStatus(control: DrataControl): ControlStatus {
+  if (control.archivedAt) return "NOT_APPLICABLE";
+  if (control.isReady) return "PASSING";
+  if (control.isMonitored) return "FAILING";
+  return "NEEDS_ATTENTION";
+}
+
+export function nameToSlug(name: string): string {
+  return name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
 }
 
 export interface DrataEvidence {
