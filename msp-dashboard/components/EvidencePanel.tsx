@@ -11,36 +11,43 @@ import type {
 
 const CONFIDENCE_CONFIG: Record<
   RecommendedControlMapping["confidence"],
-  { badge: string; dot: string; label: string }
+  { badge: string; label: string }
 > = {
-  HIGH:   { badge: "bg-green-100 text-green-700",  dot: "bg-green-500",  label: "High" },
-  MEDIUM: { badge: "bg-amber-100 text-amber-700",  dot: "bg-amber-400",  label: "Medium" },
-  LOW:    { badge: "bg-slate-100 text-slate-500",  dot: "bg-slate-300",  label: "Low" },
+  HIGH:   { badge: "bg-green-100 text-green-700",  label: "High" },
+  MEDIUM: { badge: "bg-amber-100 text-amber-700",  label: "Medium" },
+  LOW:    { badge: "bg-slate-100 text-slate-500",  label: "Low" },
 };
 
-// ─── URL helper ───────────────────────────────────────────────────────────────
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function detectSource(url: string): { label: string; icon: string } {
-  if (url.includes("drive.google.com") || url.includes("docs.google.com")) {
-    if (url.includes("/folders/")) return { label: "Google Drive Folder", icon: "📁" };
-    if (url.includes("docs.google.com/document"))    return { label: "Google Doc",    icon: "📝" };
-    if (url.includes("docs.google.com/spreadsheets")) return { label: "Google Sheet",  icon: "📊" };
-    if (url.includes("docs.google.com/presentation")) return { label: "Google Slides", icon: "📽️" };
-    return { label: "Google Drive", icon: "📁" };
-  }
-  if (url.includes("1drv.ms") || url.includes("onedrive.live.com") || url.includes("sharepoint.com")) {
-    return { label: "OneDrive", icon: "☁️" };
-  }
-  if (url.endsWith(".zip") || url.includes(".zip?")) return { label: "Zip file", icon: "🗜️" };
-  return { label: "Direct URL", icon: "🔗" };
+const ACCEPTED_EXTENSIONS =
+  ".pdf,.png,.jpg,.jpeg,.gif,.webp,.txt,.md,.csv,.json,.xml,.html,.log,.zip";
+
+function detectSource(url: string): string {
+  if (url.includes("docs.google.com/document"))    return "Google Doc";
+  if (url.includes("docs.google.com/spreadsheets")) return "Google Sheet";
+  if (url.includes("docs.google.com/presentation")) return "Google Slides";
+  if (url.includes("drive.google.com/drive/folders")) return "⚠️ Google Drive Folder (unsupported — zip it first)";
+  if (url.includes("drive.google.com"))            return "Google Drive file";
+  if (url.includes("1drv.ms") || url.includes("onedrive.live.com") || url.includes("sharepoint.com"))
+    return "OneDrive file";
+  if (url.endsWith(".zip") || url.includes(".zip?")) return "Zip archive";
+  return "Direct URL";
 }
 
 function fileIcon(mimeType: string, name: string): string {
   if (mimeType === "application/pdf" || name.endsWith(".pdf")) return "📄";
-  if (mimeType.startsWith("image/")) return "🖼️";
-  if (mimeType === "text/csv" || name.endsWith(".csv")) return "📊";
+  if (mimeType.startsWith("image/"))  return "🖼️";
+  if (mimeType === "text/csv" || name.endsWith(".csv"))  return "📊";
   if (mimeType === "application/json" || name.endsWith(".json")) return "🔧";
+  if (name.endsWith(".zip")) return "🗜️";
   return "📋";
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 }
 
 // ─── Props ────────────────────────────────────────────────────────────────────
@@ -49,16 +56,26 @@ interface Props {
   workspaceId: number;
 }
 
+type InputMode = "url" | "upload";
+
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export default function EvidencePanel({ workspaceId }: Props) {
+  const [mode, setMode] = React.useState<InputMode>("url");
+
+  // URL mode state
   const [url, setUrl] = React.useState("");
+
+  // Upload mode state
+  const [selectedFile, setSelectedFile] = React.useState<File | null>(null);
+  const [dragOver, setDragOver] = React.useState(false);
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
+
+  // Shared state
   const [running, setRunning] = React.useState(false);
   const [result, setResult] = React.useState<ControlMappingResult | null>(null);
   const [error, setError] = React.useState<string | null>(null);
   const [expanded, setExpanded] = React.useState<Set<string>>(new Set());
-
-  const source = url.trim() ? detectSource(url.trim()) : null;
 
   function toggleExpanded(key: string) {
     setExpanded((prev) => {
@@ -68,20 +85,48 @@ export default function EvidencePanel({ workspaceId }: Props) {
     });
   }
 
+  // ── File drop handlers ────────────────────────────────────────────────────
+  function handleDrop(e: React.DragEvent) {
+    e.preventDefault();
+    setDragOver(false);
+    const file = e.dataTransfer.files?.[0];
+    if (file) setSelectedFile(file);
+  }
+
+  function handleFileInput(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (file) setSelectedFile(file);
+  }
+
+  // ── Analyze ───────────────────────────────────────────────────────────────
   async function handleAnalyze() {
-    const trimmed = url.trim();
-    if (!trimmed) return;
+    if (mode === "url" && !url.trim()) return;
+    if (mode === "upload" && !selectedFile) return;
+
     setRunning(true);
     setError(null);
     setResult(null);
     setExpanded(new Set());
 
     try {
-      const res = await fetch(`/api/client/${workspaceId}/control-mapper`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url: trimmed }),
-      });
+      let res: Response;
+
+      if (mode === "url") {
+        res = await fetch(`/api/client/${workspaceId}/control-mapper`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ url: url.trim() }),
+        });
+      } else {
+        const formData = new FormData();
+        formData.append("file", selectedFile!);
+        res = await fetch(`/api/client/${workspaceId}/control-mapper`, {
+          method: "POST",
+          body: formData,
+          // Do NOT set Content-Type — browser sets it with the correct boundary
+        });
+      }
+
       const data = (await res.json()) as ControlMappingResult & { error?: string };
       if (data.error) throw new Error(data.error);
       setResult(data);
@@ -92,7 +137,10 @@ export default function EvidencePanel({ workspaceId }: Props) {
     }
   }
 
-  // ── Loading state ──────────────────────────────────────────────────────────
+  const canAnalyze = mode === "url" ? !!url.trim() : !!selectedFile;
+  const isFolder = mode === "url" && url.includes("/folders/");
+
+  // ── Loading ───────────────────────────────────────────────────────────────
   if (running) {
     return (
       <div className="flex flex-col items-center py-16 gap-4">
@@ -102,8 +150,10 @@ export default function EvidencePanel({ workspaceId }: Props) {
         </svg>
         <p className="text-sm font-medium text-slate-700">Claude is reading your files…</p>
         <p className="text-xs text-slate-400 max-w-xs text-center">
-          Downloading, reading content, and mapping against all Drata controls.
-          Zip files may take a minute.
+          {mode === "upload"
+            ? "Uploading and analyzing content against Drata controls."
+            : "Downloading, reading content, and mapping against Drata controls."}
+          {" "}Zip files may take a minute.
         </p>
       </div>
     );
@@ -111,70 +161,151 @@ export default function EvidencePanel({ workspaceId }: Props) {
 
   return (
     <div className="space-y-5">
-      {/* URL input area */}
+      {/* Input panel */}
       <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-3">
         <div>
-          <p className="text-sm font-semibold text-slate-700 mb-1">
-            Map evidence files to Drata controls
-          </p>
+          <p className="text-sm font-semibold text-slate-700 mb-0.5">Map evidence files to Drata controls</p>
           <p className="text-xs text-slate-500">
-            Paste a Google Drive, Google Doc/Sheet/Slides, or OneDrive share link — or any direct download URL.
-            Zip files are extracted automatically. Claude will recommend which controls each file maps to.
+            Claude reads your file(s) and recommends which controls they provide evidence for —
+            so you know exactly what to associate when uploading to Drata.
           </p>
         </div>
 
-        <div className="flex gap-2">
-          <div className="flex-1 relative">
-            <input
-              type="url"
-              value={url}
-              onChange={(e) => setUrl(e.target.value)}
-              onKeyDown={(e) => { if (e.key === "Enter") void handleAnalyze(); }}
-              placeholder="https://drive.google.com/file/d/… or https://1drv.ms/…"
-              className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 pr-8 bg-white text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-            {url && (
-              <button
-                onClick={() => { setUrl(""); setResult(null); setError(null); }}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
-              >
-                ✕
-              </button>
-            )}
-          </div>
-          <button
-            onClick={() => void handleAnalyze()}
-            disabled={!url.trim()}
-            className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-40 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors whitespace-nowrap"
-          >
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-            </svg>
-            Analyze
-          </button>
+        {/* Mode tabs */}
+        <div className="flex gap-1 bg-white border border-slate-200 rounded-lg p-1 w-fit">
+          {(["url", "upload"] as InputMode[]).map((m) => (
+            <button
+              key={m}
+              onClick={() => { setMode(m); setError(null); }}
+              className={`text-xs font-medium px-3 py-1.5 rounded-md transition-colors ${
+                mode === m
+                  ? "bg-blue-600 text-white shadow-sm"
+                  : "text-slate-500 hover:text-slate-700"
+              }`}
+            >
+              {m === "url" ? "🔗 Paste Link" : "⬆️ Upload File"}
+            </button>
+          ))}
         </div>
 
-        {/* Detected source type badge */}
-        {source && (
-          <div className="flex items-center gap-1.5 text-xs text-slate-500">
-            <span>{source.icon}</span>
-            <span className="font-medium">{source.label} detected</span>
-            {source.label === "Google Drive Folder" && (
-              <span className="text-amber-600">
-                — Folders are not supported. Please zip the folder and share the zip file.
-              </span>
+        {/* URL mode */}
+        {mode === "url" && (
+          <div className="space-y-2">
+            <div className="flex gap-2">
+              <div className="flex-1 relative">
+                <input
+                  type="url"
+                  value={url}
+                  onChange={(e) => setUrl(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter" && !isFolder) void handleAnalyze(); }}
+                  placeholder="https://drive.google.com/file/d/… or https://1drv.ms/…"
+                  className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 pr-8 bg-white text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                {url && (
+                  <button
+                    onClick={() => { setUrl(""); setResult(null); setError(null); }}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-xs"
+                  >
+                    ✕
+                  </button>
+                )}
+              </div>
+              <button
+                onClick={() => void handleAnalyze()}
+                disabled={!canAnalyze || isFolder}
+                className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-40 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors whitespace-nowrap"
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                </svg>
+                Analyze
+              </button>
+            </div>
+
+            {/* Source type hint */}
+            {url.trim() && (
+              <p className={`text-xs ${isFolder ? "text-amber-600" : "text-slate-400"}`}>
+                {detectSource(url.trim())}
+                {isFolder && " — zip the folder and paste the zip link instead"}
+              </p>
             )}
+
+            {/* Supported link types */}
+            <div className="flex flex-wrap gap-1.5">
+              {["Google Drive", "Google Docs / Sheets / Slides", "OneDrive", "Direct URL", "Zip archive"].map((t) => (
+                <span key={t} className="text-xs bg-white border border-slate-200 text-slate-500 px-2 py-0.5 rounded-full">
+                  {t}
+                </span>
+              ))}
+            </div>
           </div>
         )}
 
-        {/* Supported types info */}
-        <div className="flex flex-wrap gap-1.5">
-          {["Google Drive", "Google Docs / Sheets / Slides", "OneDrive", "Direct URL", "Zip archives"].map((t) => (
-            <span key={t} className="text-xs bg-white border border-slate-200 text-slate-500 px-2 py-0.5 rounded-full">
-              {t}
-            </span>
-          ))}
-        </div>
+        {/* Upload mode */}
+        {mode === "upload" && (
+          <div className="space-y-2">
+            {/* Drop zone */}
+            <div
+              onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+              onDragLeave={() => setDragOver(false)}
+              onDrop={handleDrop}
+              onClick={() => fileInputRef.current?.click()}
+              className={`border-2 border-dashed rounded-xl px-6 py-8 text-center cursor-pointer transition-colors ${
+                dragOver
+                  ? "border-blue-400 bg-blue-50"
+                  : selectedFile
+                  ? "border-green-300 bg-green-50"
+                  : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50"
+              }`}
+            >
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept={ACCEPTED_EXTENSIONS}
+                className="hidden"
+                onChange={handleFileInput}
+              />
+              {selectedFile ? (
+                <div className="space-y-1">
+                  <p className="text-2xl">{fileIcon(selectedFile.type, selectedFile.name)}</p>
+                  <p className="text-sm font-semibold text-slate-800">{selectedFile.name}</p>
+                  <p className="text-xs text-slate-400">{formatBytes(selectedFile.size)}</p>
+                  <p className="text-xs text-slate-400">Click to change file</p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <p className="text-3xl">📂</p>
+                  <p className="text-sm font-medium text-slate-600">
+                    Drop a file here, or <span className="text-blue-600">click to browse</span>
+                  </p>
+                  <p className="text-xs text-slate-400">
+                    PDF, images, text files, or a zip archive containing multiple files
+                  </p>
+                </div>
+              )}
+            </div>
+
+            {/* Supported types */}
+            <div className="flex flex-wrap gap-1.5">
+              {["PDF", "PNG / JPG / WEBP", "TXT / MD / CSV / JSON", "ZIP (multi-file)"].map((t) => (
+                <span key={t} className="text-xs bg-white border border-slate-200 text-slate-500 px-2 py-0.5 rounded-full">
+                  {t}
+                </span>
+              ))}
+            </div>
+
+            <button
+              onClick={() => void handleAnalyze()}
+              disabled={!canAnalyze}
+              className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-40 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+              </svg>
+              Analyze {selectedFile?.name ? `"${selectedFile.name.slice(0, 30)}${selectedFile.name.length > 30 ? "…" : ""}"` : "file"}
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Error */}
@@ -187,16 +318,16 @@ export default function EvidencePanel({ workspaceId }: Props) {
       {/* Results */}
       {result && (
         <div className="space-y-4">
-          {/* Summary strip */}
-          <div className="flex flex-wrap items-center gap-4 text-sm text-slate-600">
-            <span className="font-semibold text-slate-800">{result.analyzedCount} file{result.analyzedCount !== 1 ? "s" : ""} analyzed</span>
+          {/* Summary bar */}
+          <div className="flex flex-wrap items-center gap-3 text-sm">
+            <span className="font-semibold text-slate-800">
+              {result.analyzedCount} file{result.analyzedCount !== 1 ? "s" : ""} analyzed
+            </span>
             {result.skippedCount > 0 && (
               <span className="text-slate-400">{result.skippedCount} skipped</span>
             )}
-            <span className="text-slate-400">·</span>
-            <span className="text-xs text-slate-400">
-              {new Date(result.generatedAt).toLocaleString()}
-            </span>
+            <span className="text-slate-300">·</span>
+            <span className="text-xs text-slate-400">{new Date(result.generatedAt).toLocaleString()}</span>
             <button
               onClick={() => void handleAnalyze()}
               className="ml-auto text-xs text-blue-600 hover:text-blue-700 font-medium bg-blue-50 hover:bg-blue-100 px-3 py-1.5 rounded-lg transition-colors"
@@ -205,30 +336,27 @@ export default function EvidencePanel({ workspaceId }: Props) {
             </button>
           </div>
 
-          {/* Analyzed files */}
+          {/* Analyzed file cards */}
           {result.files.filter((f) => !f.skipped).map((file, i) => (
             <FileCard
               key={i}
               file={file}
-              expanded={expanded.has(`file-${i}`)}
-              onToggle={() => toggleExpanded(`file-${i}`)}
+              expanded={expanded.has(`f${i}`)}
+              onToggle={() => toggleExpanded(`f${i}`)}
               expandedControls={expanded}
-              onToggleControl={(key) => toggleExpanded(key)}
+              onToggleControl={toggleExpanded}
               fileIndex={i}
             />
           ))}
 
           {/* Skipped files */}
-          {result.files.filter((f) => f.skipped).length > 0 && (
+          {result.files.some((f) => f.skipped) && (
             <div className="space-y-2">
               <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide">
                 Skipped ({result.files.filter((f) => f.skipped).length})
               </p>
               {result.files.filter((f) => f.skipped).map((file, i) => (
-                <div
-                  key={i}
-                  className="flex items-center gap-3 bg-slate-50 border border-slate-100 rounded-xl px-4 py-3"
-                >
+                <div key={i} className="flex items-center gap-3 bg-slate-50 border border-slate-100 rounded-xl px-4 py-3">
                   <span className="text-lg">{fileIcon(file.mimeType, file.fileName)}</span>
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium text-slate-500 truncate">{file.fileName}</p>
@@ -241,13 +369,13 @@ export default function EvidencePanel({ workspaceId }: Props) {
         </div>
       )}
 
-      {/* Empty prompt when nothing analyzed yet */}
-      {!result && !error && (
+      {/* Empty state */}
+      {!result && !error && !running && (
         <div className="flex flex-col items-center py-10 gap-2 text-center">
           <span className="text-4xl">🗂️</span>
           <p className="text-sm text-slate-500 max-w-sm">
-            Paste a file link above and Claude will recommend which Drata controls it maps to,
-            so you can upload it as evidence with the right associations.
+            Paste a share link or upload a file above. Claude will tell you which Drata controls
+            it maps to so you can associate it as evidence with the right controls.
           </p>
         </div>
       )}
@@ -255,7 +383,7 @@ export default function EvidencePanel({ workspaceId }: Props) {
   );
 }
 
-// ─── File card ────────────────────────────────────────────────────────────────
+// ─── File result card ─────────────────────────────────────────────────────────
 
 function FileCard({
   file,
@@ -272,13 +400,13 @@ function FileCard({
   onToggleControl: (key: string) => void;
   fileIndex: number;
 }) {
-  const highCount = file.recommendedControls.filter((c) => c.confidence === "HIGH").length;
-  const medCount  = file.recommendedControls.filter((c) => c.confidence === "MEDIUM").length;
+  const highCount   = file.recommendedControls.filter((c) => c.confidence === "HIGH").length;
+  const medCount    = file.recommendedControls.filter((c) => c.confidence === "MEDIUM").length;
   const icon = fileIcon(file.mimeType, file.fileName);
 
   return (
     <div className="border border-slate-200 rounded-xl overflow-hidden bg-white">
-      {/* Header row */}
+      {/* Header */}
       <button
         onClick={onToggle}
         className="w-full flex items-start gap-3 p-4 text-left hover:bg-slate-50 transition-colors"
@@ -297,7 +425,7 @@ function FileCard({
               </span>
             )}
             <span className="text-xs text-slate-400">
-              {file.recommendedControls.length} control{file.recommendedControls.length !== 1 ? "s" : ""} recommended
+              {file.recommendedControls.length} control{file.recommendedControls.length !== 1 ? "s" : ""}
             </span>
           </div>
           <p className="text-sm font-semibold text-slate-800 truncate">{file.fileName}</p>
@@ -313,69 +441,66 @@ function FileCard({
         </svg>
       </button>
 
-      {/* Expanded: control recommendations */}
-      {expanded && file.recommendedControls.length > 0 && (
-        <div className="border-t border-slate-100 divide-y divide-slate-50">
-          {file.recommendedControls.map((ctrl, ci) => {
-            const cfg = CONFIDENCE_CONFIG[ctrl.confidence];
-            const key = `file-${fileIndex}-ctrl-${ci}`;
-            const ctrlExpanded = expandedControls.has(key);
-            return (
-              <div key={ci} className="px-4 py-3">
-                {/* Control header row */}
-                <button
-                  onClick={() => onToggleControl(key)}
-                  className="w-full text-left"
-                >
-                  <div className="flex flex-wrap items-center gap-2 mb-1">
-                    <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${cfg.badge}`}>
-                      {cfg.label} confidence
-                    </span>
-                    <span className="text-xs font-mono font-semibold text-slate-600">
-                      {ctrl.controlCode}
-                    </span>
-                    {ctrl.frameworkTags.map((t) => (
-                      <span
-                        key={t}
-                        className="text-xs bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded"
-                      >
-                        {t}
-                      </span>
-                    ))}
-                    <svg
-                      className={`w-3.5 h-3.5 text-slate-400 ml-auto transition-transform ${ctrlExpanded ? "rotate-90" : ""}`}
-                      fill="none" viewBox="0 0 24 24" stroke="currentColor"
+      {/* Expanded control list */}
+      {expanded && (
+        <div className="border-t border-slate-100">
+          {file.recommendedControls.length === 0 ? (
+            <p className="px-4 py-4 text-sm text-slate-400 text-center">
+              No relevant controls identified for this file.
+            </p>
+          ) : (
+            <div className="divide-y divide-slate-50">
+              {file.recommendedControls.map((ctrl, ci) => {
+                const cfg = CONFIDENCE_CONFIG[ctrl.confidence];
+                const key = `f${fileIndex}-c${ci}`;
+                const ctrlExpanded = expandedControls.has(key);
+                return (
+                  <div key={ci} className="px-4 py-3">
+                    <button
+                      onClick={() => onToggleControl(key)}
+                      className="w-full text-left"
                     >
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                    </svg>
-                  </div>
-                  <p className="text-xs font-semibold text-slate-800">{ctrl.controlName}</p>
-                  {!ctrlExpanded && (
-                    <p className="text-xs text-slate-500 mt-0.5 line-clamp-1">{ctrl.reasoning}</p>
-                  )}
-                </button>
+                      <div className="flex flex-wrap items-center gap-2 mb-1">
+                        <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${cfg.badge}`}>
+                          {cfg.label} confidence
+                        </span>
+                        <span className="text-xs font-mono font-semibold text-slate-600">
+                          {ctrl.controlCode}
+                        </span>
+                        {ctrl.frameworkTags.map((t) => (
+                          <span key={t} className="text-xs bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded">
+                            {t}
+                          </span>
+                        ))}
+                        <svg
+                          className={`w-3.5 h-3.5 text-slate-400 ml-auto transition-transform ${ctrlExpanded ? "rotate-90" : ""}`}
+                          fill="none" viewBox="0 0 24 24" stroke="currentColor"
+                        >
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                        </svg>
+                      </div>
+                      <p className="text-xs font-semibold text-slate-800">{ctrl.controlName}</p>
+                      {!ctrlExpanded && (
+                        <p className="text-xs text-slate-500 mt-0.5 line-clamp-1">{ctrl.reasoning}</p>
+                      )}
+                    </button>
 
-                {/* Expanded: reasoning + evidence note */}
-                {ctrlExpanded && (
-                  <div className="mt-2 space-y-2">
-                    <p className="text-xs text-slate-600 leading-relaxed">{ctrl.reasoning}</p>
-                    {ctrl.evidenceNote && (
-                      <div className="bg-blue-50 border border-blue-100 rounded-lg px-3 py-2">
-                        <span className="text-xs font-semibold text-blue-600">Evidence note: </span>
-                        <span className="text-xs text-blue-700">{ctrl.evidenceNote}</span>
+                    {ctrlExpanded && (
+                      <div className="mt-2 space-y-2">
+                        <p className="text-xs text-slate-600 leading-relaxed">{ctrl.reasoning}</p>
+                        {ctrl.evidenceNote && (
+                          <div className="bg-blue-50 border border-blue-100 rounded-lg px-3 py-2">
+                            <span className="text-xs font-semibold text-blue-600">Evidence note: </span>
+                            <span className="text-xs text-blue-700">{ctrl.evidenceNote}</span>
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      )}
-
-      {expanded && file.recommendedControls.length === 0 && (
-        <div className="border-t border-slate-100 px-4 py-4 text-sm text-slate-400 text-center">
-          No relevant controls identified for this file.
+                );
+              })}
+            </div>
+          )}
         </div>
       )}
     </div>

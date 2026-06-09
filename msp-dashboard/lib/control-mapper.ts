@@ -299,11 +299,12 @@ function buildControlList(controls: DrataControl[]): string {
     .join("\n");
 }
 
-// ─── Main export ──────────────────────────────────────────────────────────────
+// ─── Shared analysis engine ───────────────────────────────────────────────────
 
-export async function mapFilesToControls(
+async function analyzeFiles(
   workspaceId: number,
-  sourceUrl: string,
+  sourceLabel: string,
+  filesToAnalyze: DownloadedFile[],
   controls: DrataControl[]
 ): Promise<ControlMappingResult> {
   const anthropicKey = process.env.ANTHROPIC_API_KEY;
@@ -313,58 +314,6 @@ export async function mapFilesToControls(
   const controlMap = new Map(controls.map((c) => [c.id, c]));
   const controlList = buildControlList(controls);
 
-  // ── Step 1: download ──────────────────────────────────────────────────────
-  const kind = detectUrlKind(sourceUrl);
-
-  if (kind === "google-drive-folder") {
-    throw new Error(
-      "Google Drive folders cannot be downloaded directly. " +
-        "Zip the folder, share the zip, and paste that link instead."
-    );
-  }
-
-  let primary: { buffer: Buffer; mimeType: string; filename: string } | null = null;
-
-  if (kind === "google-drive-file") {
-    const id = extractGoogleId(sourceUrl);
-    if (!id) throw new Error("Could not extract file ID from Google Drive URL.");
-    primary = await downloadGoogleDriveFile(id);
-  } else if (kind === "google-docs" || kind === "google-sheets" || kind === "google-slides") {
-    const id = extractGoogleId(sourceUrl);
-    if (!id) throw new Error("Could not extract document ID from Google URL.");
-    primary = await downloadGoogleDoc(id, kind);
-  } else if (kind === "onedrive") {
-    primary = await downloadOneDrive(sourceUrl);
-  } else {
-    primary = await fetchWithFallback([sourceUrl]);
-  }
-
-  if (!primary) {
-    throw new Error(
-      "Could not download the file. Ensure sharing is set to " +
-        '"Anyone with the link can view" and try again.'
-    );
-  }
-
-  // Normalize mime type using filename hint
-  primary.mimeType = normalizeMime(primary.mimeType, primary.filename);
-
-  // ── Step 2: expand zip ────────────────────────────────────────────────────
-  let filesToAnalyze: DownloadedFile[];
-
-  if (isZip(primary.buffer, primary.mimeType, primary.filename)) {
-    const extracted = extractZip(primary.buffer);
-    if (!extracted.length) {
-      throw new Error("The zip file appears to be empty or could not be extracted.");
-    }
-    filesToAnalyze = extracted;
-  } else {
-    filesToAnalyze = [
-      { name: primary.filename, buffer: primary.buffer, mimeType: primary.mimeType },
-    ];
-  }
-
-  // ── Step 3: analyze each file with Claude ─────────────────────────────────
   const fileResults: ControlMappingFileResult[] = [];
   let analyzedCount = 0;
   let skippedCount = 0;
@@ -501,10 +450,88 @@ Return ONLY valid JSON (no markdown fences):
   return {
     generatedAt: new Date().toISOString(),
     workspaceId,
-    sourceUrl,
+    sourceUrl: sourceLabel,
     totalFiles: filesToAnalyze.length,
     analyzedCount,
     skippedCount,
     files: fileResults,
   };
 }
+
+// ─── Public: from URL ─────────────────────────────────────────────────────────
+
+export async function mapFilesFromUrl(
+  workspaceId: number,
+  sourceUrl: string,
+  controls: DrataControl[]
+): Promise<ControlMappingResult> {
+  const kind = detectUrlKind(sourceUrl);
+
+  if (kind === "google-drive-folder") {
+    throw new Error(
+      "Google Drive folders cannot be downloaded directly. " +
+        "Zip the folder, share the zip, and paste that link instead."
+    );
+  }
+
+  let primary: { buffer: Buffer; mimeType: string; filename: string } | null = null;
+
+  if (kind === "google-drive-file") {
+    const id = extractGoogleId(sourceUrl);
+    if (!id) throw new Error("Could not extract file ID from Google Drive URL.");
+    primary = await downloadGoogleDriveFile(id);
+  } else if (kind === "google-docs" || kind === "google-sheets" || kind === "google-slides") {
+    const id = extractGoogleId(sourceUrl);
+    if (!id) throw new Error("Could not extract document ID from Google URL.");
+    primary = await downloadGoogleDoc(id, kind);
+  } else if (kind === "onedrive") {
+    primary = await downloadOneDrive(sourceUrl);
+  } else {
+    primary = await fetchWithFallback([sourceUrl]);
+  }
+
+  if (!primary) {
+    throw new Error(
+      'Could not download the file. Ensure sharing is set to "Anyone with the link can view" and try again.'
+    );
+  }
+
+  primary.mimeType = normalizeMime(primary.mimeType, primary.filename);
+
+  const filesToAnalyze = resolveFiles(primary.buffer, primary.mimeType, primary.filename);
+  return analyzeFiles(workspaceId, sourceUrl, filesToAnalyze, controls);
+}
+
+// ─── Public: from uploaded buffer ────────────────────────────────────────────
+
+export async function mapFilesFromBuffer(
+  workspaceId: number,
+  filename: string,
+  buffer: Buffer,
+  mimeType: string,
+  controls: DrataControl[]
+): Promise<ControlMappingResult> {
+  const normalizedMime = normalizeMime(mimeType, filename);
+  const filesToAnalyze = resolveFiles(buffer, normalizedMime, filename);
+  return analyzeFiles(workspaceId, `upload:${filename}`, filesToAnalyze, controls);
+}
+
+// ─── Shared: zip expansion or single-file passthrough ────────────────────────
+
+function resolveFiles(
+  buffer: Buffer,
+  mimeType: string,
+  filename: string
+): DownloadedFile[] {
+  if (isZip(buffer, mimeType, filename)) {
+    const extracted = extractZip(buffer);
+    if (!extracted.length) {
+      throw new Error("The zip file appears to be empty or could not be extracted.");
+    }
+    return extracted;
+  }
+  return [{ name: filename, buffer, mimeType }];
+}
+
+// Keep old name as alias so existing route import still compiles
+export { mapFilesFromUrl as mapFilesToControls };

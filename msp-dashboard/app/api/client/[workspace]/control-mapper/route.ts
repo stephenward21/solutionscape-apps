@@ -1,15 +1,16 @@
 /**
  * POST /api/client/[workspace]/control-mapper
- * Body: { url: string }
  *
- * Downloads the file(s) at `url` (Google Drive, OneDrive, or direct),
- * fetches all controls for the workspace, then asks Claude to recommend
- * which controls each file maps to.
+ * Accepts two input modes:
+ *   1. JSON body { url: string }           — downloads from Google Drive/OneDrive/direct URL
+ *   2. multipart/form-data { file: File }  — local file or zip upload
+ *
+ * Returns ControlMappingResult with Claude's recommended control mappings.
  */
 import { NextResponse } from "next/server";
 import { getClientForKey } from "@/lib/drata-client";
 import { getWorkspaceEntry } from "@/lib/workspace-cache";
-import { mapFilesToControls } from "@/lib/control-mapper";
+import { mapFilesFromUrl, mapFilesFromBuffer } from "@/lib/control-mapper";
 
 export const dynamic = "force-dynamic";
 // Allow up to 5 minutes — zip files with many entries can take a while
@@ -31,26 +32,6 @@ export async function POST(
     );
   }
 
-  let url: string;
-  try {
-    const body = (await req.json()) as { url?: string };
-    url = (body.url ?? "").trim();
-  } catch {
-    return NextResponse.json({ error: "Invalid request body — expected { url: string }" }, { status: 400 });
-  }
-
-  if (!url) {
-    return NextResponse.json({ error: "url is required" }, { status: 400 });
-  }
-
-  // Basic sanity check — must be HTTPS
-  if (!url.startsWith("https://")) {
-    return NextResponse.json(
-      { error: "URL must start with https://" },
-      { status: 400 }
-    );
-  }
-
   try {
     const entry = await getWorkspaceEntry(workspaceId);
     if (!entry) {
@@ -58,11 +39,68 @@ export async function POST(
     }
 
     const client = getClientForKey(entry.apiKey);
-
-    // Fetch all controls for this workspace (used to build the recommendation list)
     const controls = await client.getControls(workspaceId);
 
-    const result = await mapFilesToControls(workspaceId, url, controls);
+    const contentType = req.headers.get("content-type") ?? "";
+
+    // ── Mode 1: file upload ───────────────────────────────────────────────────
+    if (contentType.includes("multipart/form-data")) {
+      let formData: FormData;
+      try {
+        formData = await req.formData();
+      } catch {
+        return NextResponse.json({ error: "Could not parse form data" }, { status: 400 });
+      }
+
+      const fileEntry = formData.get("file");
+      if (!fileEntry || typeof fileEntry === "string") {
+        return NextResponse.json({ error: "No file found in form data" }, { status: 400 });
+      }
+
+      const file = fileEntry as File;
+      if (file.size === 0) {
+        return NextResponse.json({ error: "Uploaded file is empty" }, { status: 400 });
+      }
+
+      const MAX_UPLOAD = 50 * 1024 * 1024; // 50 MB for zips (individual files capped inside)
+      if (file.size > MAX_UPLOAD) {
+        return NextResponse.json(
+          { error: "File too large (max 50 MB). For large zip files, try uploading subsets." },
+          { status: 413 }
+        );
+      }
+
+      const buffer = Buffer.from(await file.arrayBuffer());
+      const result = await mapFilesFromBuffer(
+        workspaceId,
+        file.name,
+        buffer,
+        file.type || "application/octet-stream",
+        controls
+      );
+      return NextResponse.json(result);
+    }
+
+    // ── Mode 2: URL ───────────────────────────────────────────────────────────
+    let url: string;
+    try {
+      const body = (await req.json()) as { url?: string };
+      url = (body.url ?? "").trim();
+    } catch {
+      return NextResponse.json(
+        { error: "Invalid request body — expected { url: string } or multipart file upload" },
+        { status: 400 }
+      );
+    }
+
+    if (!url) {
+      return NextResponse.json({ error: "url is required" }, { status: 400 });
+    }
+    if (!url.startsWith("https://")) {
+      return NextResponse.json({ error: "URL must start with https://" }, { status: 400 });
+    }
+
+    const result = await mapFilesFromUrl(workspaceId, url, controls);
     return NextResponse.json(result);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
