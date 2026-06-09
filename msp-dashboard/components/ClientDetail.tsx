@@ -30,7 +30,7 @@ type TabKey = "overview" | "controls" | "tasks" | "risks" | "events" | "ai-insig
 const TABS: { key: TabKey; label: string }[] = [
   { key: "overview", label: "Overview" },
   { key: "ai-insights", label: "AI Insights ✨" },
-  { key: "evidence", label: "Evidence" },
+  { key: "evidence", label: "Control Mapper 🗂️" },
   { key: "controls", label: "Controls" },
   { key: "tasks", label: "Tasks" },
   { key: "risks", label: "Risks" },
@@ -484,7 +484,7 @@ export default function ClientDetail({ workspaceId }: Props) {
         {activeTab === "evidence" && (
           <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
             <h2 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-5">
-              Evidence Library Validation
+              Evidence → Control Mapper
             </h2>
             <EvidencePanel workspaceId={workspaceId} />
           </div>

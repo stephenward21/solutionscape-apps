@@ -154,6 +154,38 @@ export interface AISummaryResult {
   items: ActionItem[];
 }
 
+// ─── Control Mapper types ─────────────────────────────────────────────────────
+
+export interface RecommendedControlMapping {
+  controlId: number;
+  controlCode: string;
+  controlName: string;
+  frameworkTags: string[];
+  confidence: "HIGH" | "MEDIUM" | "LOW";
+  reasoning: string;
+  evidenceNote: string;
+}
+
+export interface ControlMappingFileResult {
+  fileName: string;
+  mimeType: string;
+  size: number;
+  fileDescription: string;
+  recommendedControls: RecommendedControlMapping[];
+  skipped?: boolean;
+  skipReason?: string;
+}
+
+export interface ControlMappingResult {
+  generatedAt: string;
+  workspaceId: number;
+  sourceUrl: string;
+  totalFiles: number;
+  analyzedCount: number;
+  skippedCount: number;
+  files: ControlMappingFileResult[];
+}
+
 // ─── Evidence validation types ────────────────────────────────────────────────
 
 export type EvidenceAdequacy = "ADEQUATE" | "PARTIAL" | "INADEQUATE" | "UNRELATED";
