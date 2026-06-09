@@ -1,0 +1,12 @@
+/node_modules
+/.next/
+/out/
+/build
+.env
+.env.local
+.env*.local
+# Alert rules contain API keys
+/data/rules/
+/data/history/
+*.tsbuildinfo
+next-env.d.ts
