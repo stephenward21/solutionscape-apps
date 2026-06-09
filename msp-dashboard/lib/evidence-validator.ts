@@ -1,20 +1,25 @@
 /**
  * Evidence Validator for MSP Dashboard
  *
- * Fetches evidence items from Drata's Evidence Library (with expand[]=versions),
- * downloads the actual file from each item's latest version `source` URL,
- * then asks Claude to validate whether that file is relevant and adequate
- * evidence for the mapped controls.
+ * New flow (replaces the broken evidence-library expand[]=versions approach):
+ *
+ * 1. Controls fetched with hasEvidence=true + expand[]=evidenceIds give us
+ *    an evidenceIds object per control. We extract all unique version IDs.
+ * 2. Each version ID is looked up via GET evidence-library/versions/{id},
+ *    which returns { downloadUrl, mimeType, name, ... }.
+ * 3. We download the file and send it to Claude alongside the list of controls
+ *    that reference that evidence version.
+ * 4. Claude returns per-control adequacy ratings.
  *
  * Cached in data/snapshots/{workspaceId}-evidence-validation.json
- * (no auto-expiry — user triggers explicitly or on first load).
+ * (no auto-expiry — user triggers explicitly via POST).
  */
 import Anthropic from "@anthropic-ai/sdk";
 import fs from "fs";
 import path from "path";
 import type {
-  DrataEvidenceItem,
   DrataControl,
+  DrataEvidenceLibraryVersion,
   EvidenceValidationResult,
   EvidenceValidationItem,
   EvidenceControlValidation,
@@ -22,9 +27,11 @@ import type {
 } from "./types";
 
 const CACHE_DIR = path.join(process.cwd(), "data", "snapshots");
-const MAX_FILE_BYTES = 15 * 1024 * 1024; // 15MB per file
+const MAX_FILE_BYTES = 15 * 1024 * 1024; // 15 MB
 
 type ImageMediaType = "image/png" | "image/jpeg" | "image/gif" | "image/webp";
+
+// ─── Cache helpers ────────────────────────────────────────────────────────────
 
 function cacheFile(workspaceId: number): string {
   return path.join(CACHE_DIR, `${workspaceId}-evidence-validation.json`);
@@ -34,8 +41,11 @@ export function loadEvidenceCache(workspaceId: number): EvidenceValidationResult
   fs.mkdirSync(CACHE_DIR, { recursive: true });
   const file = cacheFile(workspaceId);
   if (!fs.existsSync(file)) return null;
-  try { return JSON.parse(fs.readFileSync(file, "utf8")) as EvidenceValidationResult; }
-  catch { return null; }
+  try {
+    return JSON.parse(fs.readFileSync(file, "utf8")) as EvidenceValidationResult;
+  } catch {
+    return null;
+  }
 }
 
 function saveEvidenceCache(result: EvidenceValidationResult): void {
@@ -43,24 +53,61 @@ function saveEvidenceCache(result: EvidenceValidationResult): void {
   fs.writeFileSync(cacheFile(result.workspaceId), JSON.stringify(result, null, 2), "utf8");
 }
 
+// ─── Evidence ID extraction ───────────────────────────────────────────────────
+
+/**
+ * The evidenceIds property returned by expand[]=evidenceIds is an object whose
+ * values are arrays of numeric IDs, e.g.:
+ *   { "documentIds": [1, 2], "imageIds": [3] }
+ * It may also be a flat number[] in some API versions.
+ * This helper extracts all IDs regardless of shape.
+ */
+export function extractEvidenceIds(control: DrataControl): number[] {
+  const raw = control.evidenceIds;
+  if (!raw) return [];
+
+  // Flat array case
+  if (Array.isArray(raw)) {
+    return raw.filter((x): x is number => typeof x === "number");
+  }
+
+  // Object case — iterate all values and collect numbers
+  const ids: number[] = [];
+  for (const val of Object.values(raw)) {
+    if (Array.isArray(val)) {
+      for (const id of val) {
+        if (typeof id === "number") ids.push(id);
+      }
+    } else if (typeof val === "number") {
+      ids.push(val);
+    }
+  }
+  return ids;
+}
+
 // ─── File helpers ─────────────────────────────────────────────────────────────
 
 function guessMediaType(url: string, contentType?: string | null): string {
   if (contentType) {
     const lower = contentType.split(";")[0]?.trim().toLowerCase() ?? "";
-    if (lower) return lower;
+    if (lower && lower !== "application/octet-stream") return lower;
   }
   const ext = url.split("?")[0]?.split(".").pop()?.toLowerCase() ?? "";
   const map: Record<string, string> = {
-    png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg",
-    gif: "image/gif", webp: "image/webp", pdf: "application/pdf",
+    png: "image/png",
+    jpg: "image/jpeg",
+    jpeg: "image/jpeg",
+    gif: "image/gif",
+    webp: "image/webp",
+    pdf: "application/pdf",
   };
   return map[ext] ?? "application/octet-stream";
 }
 
 function isSupported(mimeType: string): boolean {
-  return ["image/png", "image/jpeg", "image/gif", "image/webp", "application/pdf"]
-    .includes(mimeType);
+  return ["image/png", "image/jpeg", "image/gif", "image/webp", "application/pdf"].includes(
+    mimeType
+  );
 }
 
 function isImageType(mimeType: string): mimeType is ImageMediaType {
@@ -72,7 +119,7 @@ async function downloadFile(
   drataApiKey: string
 ): Promise<{ base64: string; mimeType: string; size: number } | null> {
   try {
-    // Try first without auth (presigned URLs), then with Bearer if 403/401
+    // Try without auth first (presigned URLs), retry with Bearer on 401/403
     let res = await fetch(url, { cache: "no-store" });
     if (res.status === 401 || res.status === 403) {
       res = await fetch(url, {
@@ -103,7 +150,10 @@ function buildFileContentBlock(
   mimeType: string
 ): Anthropic.MessageParam["content"][number] {
   if (isImageType(mimeType)) {
-    return { type: "image", source: { type: "base64", media_type: mimeType, data: base64 } };
+    return {
+      type: "image",
+      source: { type: "base64", media_type: mimeType, data: base64 },
+    };
   }
   // PDF
   return {
@@ -115,14 +165,22 @@ function buildFileContentBlock(
 function buildValidationPrompt(
   evidenceName: string,
   mimeType: string,
-  controls: Array<{ id: number; code?: string; name: string; description?: string; frameworkTags?: string[] }>
+  controls: Array<{
+    id: number;
+    code?: string;
+    name: string;
+    description?: string;
+    frameworkTags?: string[];
+  }>
 ): string {
-  const controlList = controls.map(
-    (c) =>
-      `- ID:${c.id} Code:${c.code ?? "N/A"} Name:"${c.name}"${
-        c.description ? ` — ${c.description.slice(0, 150)}` : ""
-      }${c.frameworkTags?.length ? ` [${c.frameworkTags.join(", ")}]` : ""}`
-  ).join("\n");
+  const controlList = controls
+    .map(
+      (c) =>
+        `- ID:${c.id} Code:${c.code ?? "N/A"} Name:"${c.name}"${
+          c.description ? ` — ${c.description.slice(0, 150)}` : ""
+        }${c.frameworkTags?.length ? ` [${c.frameworkTags.join(", ")}]` : ""}`
+    )
+    .join("\n");
 
   return `You are a GRC auditor reviewing compliance evidence files.
 
@@ -154,74 +212,102 @@ Return ONLY valid JSON (no markdown fences):
 
 // ─── Main export ──────────────────────────────────────────────────────────────
 
+/**
+ * @param workspaceId       Drata workspace ID
+ * @param drataApiKey       Used for Bearer-auth file downloads if presigned URL fails
+ * @param controls          Controls returned by getControlsWithEvidence() — have .evidenceIds
+ * @param evidenceVersionMap  Map of versionId → DrataEvidenceLibraryVersion (with downloadUrl)
+ */
 export async function validateEvidenceLibrary(
   workspaceId: number,
   drataApiKey: string,
-  evidenceItems: DrataEvidenceItem[],
-  allControls: DrataControl[]
+  controls: DrataControl[],
+  evidenceVersionMap: Map<number, DrataEvidenceLibraryVersion>
 ): Promise<EvidenceValidationResult> {
   const anthropicKey = process.env.ANTHROPIC_API_KEY;
   if (!anthropicKey) throw new Error("ANTHROPIC_API_KEY is not set");
 
   const anthropic = new Anthropic({ apiKey: anthropicKey });
-  const controlMap = new Map(allControls.map((c) => [c.id, c]));
+  const controlMap = new Map(controls.map((c) => [c.id, c]));
+
+  // Build reverse map: versionId → controls that reference this evidence
+  const versionToControls = new Map<number, DrataControl[]>();
+  for (const ctrl of controls) {
+    if (ctrl.archivedAt) continue;
+    for (const vId of extractEvidenceIds(ctrl)) {
+      const existing = versionToControls.get(vId) ?? [];
+      existing.push(ctrl);
+      versionToControls.set(vId, existing);
+    }
+  }
 
   const validationItems: EvidenceValidationItem[] = [];
   let validatedCount = 0;
   let skippedCount = 0;
 
-  // Only process items that have at least one control mapped AND have a source URL
-  const processable = evidenceItems.filter(
-    (e) => !e.archivedAt && e.controls && e.controls.length > 0 && e.versions && e.versions.length > 0
-  );
+  for (const versionId of Array.from(versionToControls.keys())) {
+    const mappedControls: DrataControl[] = versionToControls.get(versionId) ?? [];
+    const version = evidenceVersionMap.get(versionId);
 
-  for (const item of processable) {
-    // Get the latest version (sort by createdAt desc, fallback to first)
-    const latestVersion = [...(item.versions ?? [])]
-      .sort((a, b) => (b.createdAt ?? "").localeCompare(a.createdAt ?? ""))
-      [0];
-
-    if (!latestVersion?.source) {
+    // Version lookup failed
+    if (!version) {
       validationItems.push({
-        evidenceId: item.id,
-        evidenceName: item.name,
+        evidenceId: versionId,
+        evidenceName: `Evidence #${versionId}`,
         fileUrl: "",
         mimeType: "",
         fileDescription: "",
         controlValidations: [],
         skipped: true,
-        skipReason: "No source URL available",
+        skipReason: "Version details could not be retrieved from Drata",
+      });
+      skippedCount++;
+      continue;
+    }
+
+    const displayName = version.evidenceName ?? version.name ?? `Evidence #${versionId}`;
+
+    if (!version.downloadUrl) {
+      validationItems.push({
+        evidenceId: versionId,
+        evidenceName: displayName,
+        fileUrl: "",
+        mimeType: version.mimeType ?? "",
+        fileDescription: "",
+        controlValidations: [],
+        skipped: true,
+        skipReason: "No download URL available",
       });
       skippedCount++;
       continue;
     }
 
     // Download the file
-    const downloaded = await downloadFile(latestVersion.source, drataApiKey);
+    const downloaded = await downloadFile(version.downloadUrl, drataApiKey);
     if (!downloaded) {
-      const mimeType = latestVersion.mimeType ?? guessMediaType(latestVersion.source, null);
+      const mimeType = version.mimeType ?? guessMediaType(version.downloadUrl, null);
       validationItems.push({
-        evidenceId: item.id,
-        evidenceName: item.name,
-        fileUrl: latestVersion.source,
+        evidenceId: versionId,
+        evidenceName: displayName,
+        fileUrl: version.downloadUrl,
         mimeType,
         fileDescription: "",
         controlValidations: [],
         skipped: true,
         skipReason: !isSupported(mimeType)
           ? `Unsupported file type: ${mimeType}`
-          : `Download failed (may be expired or too large)`,
+          : "Download failed (may be expired or too large)",
       });
       skippedCount++;
       continue;
     }
 
-    // Resolve the mapped controls
-    const mappedControls = (item.controls ?? [])
-      .map((c) => controlMap.get(c.id))
-      .filter((c): c is DrataControl => c !== undefined);
+    // Resolve full control details from the control map
+    const resolvedControls = mappedControls
+      .map((c) => controlMap.get(c.id) ?? c)
+      .filter((c): c is DrataControl => !c.archivedAt);
 
-    if (!mappedControls.length) {
+    if (!resolvedControls.length) {
       skippedCount++;
       continue;
     }
@@ -229,9 +315,9 @@ export async function validateEvidenceLibrary(
     // Build Claude request
     const contentBlock = buildFileContentBlock(downloaded.base64, downloaded.mimeType);
     const prompt = buildValidationPrompt(
-      item.name,
+      displayName,
       downloaded.mimeType,
-      mappedControls.map((c) => ({
+      resolvedControls.map((c) => ({
         id: c.id,
         code: c.code,
         name: c.name,
@@ -248,8 +334,12 @@ export async function validateEvidenceLibrary(
       const message = await (anthropic.messages.create as (p: any) => Promise<Anthropic.Message>)({
         model: "claude-opus-4-7",
         max_tokens: 2048,
+        thinking: { type: "adaptive" },
         messages: [
-          { role: "user", content: [contentBlock, { type: "text", text: prompt }] },
+          {
+            role: "user",
+            content: [contentBlock, { type: "text", text: prompt }],
+          },
         ],
       });
 
@@ -284,8 +374,8 @@ export async function validateEvidenceLibrary(
         });
       }
     } catch {
-      // If Claude fails for this file, mark it partially
-      controlValidations = mappedControls.map((c) => ({
+      // Claude failed for this file — mark partial so user knows to review manually
+      controlValidations = resolvedControls.map((c) => ({
         controlId: c.id,
         controlCode: c.code ?? String(c.id),
         controlName: c.name,
@@ -299,9 +389,9 @@ export async function validateEvidenceLibrary(
     }
 
     validationItems.push({
-      evidenceId: item.id,
-      evidenceName: item.name,
-      fileUrl: latestVersion.source,
+      evidenceId: versionId,
+      evidenceName: displayName,
+      fileUrl: version.downloadUrl,
       mimeType: downloaded.mimeType,
       fileDescription,
       controlValidations,
@@ -309,7 +399,7 @@ export async function validateEvidenceLibrary(
     validatedCount++;
   }
 
-  // Aggregate adequacy counts
+  // Aggregate adequacy counts across all control validations
   const allValidations = validationItems.flatMap((i) => i.controlValidations);
   const adequateCount = allValidations.filter((v) => v.adequacy === "ADEQUATE").length;
   const partialCount = allValidations.filter((v) => v.adequacy === "PARTIAL").length;
@@ -319,7 +409,7 @@ export async function validateEvidenceLibrary(
   const result: EvidenceValidationResult = {
     generatedAt: new Date().toISOString(),
     workspaceId,
-    totalEvidenceItems: evidenceItems.filter((e) => !e.archivedAt).length,
+    totalEvidenceItems: versionToControls.size,
     validatedCount,
     skippedCount,
     adequateCount,
@@ -333,5 +423,4 @@ export async function validateEvidenceLibrary(
   return result;
 }
 
-// Helper: just return cache if it exists, don't re-run
 export { loadEvidenceCache as getCachedEvidenceValidation };

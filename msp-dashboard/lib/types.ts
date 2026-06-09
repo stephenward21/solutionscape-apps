@@ -44,6 +44,12 @@ export interface DrataControl {
   frameworkTags?: string[]; // e.g. ["SOC_2", "ISO_27001"]
   archivedAt?: string | null;
   owners?: Array<{ id: number; firstName?: string; lastName?: string; email?: string }>;
+  /**
+   * Populated when you use expand[]=evidenceIds on the controls endpoint.
+   * Shape is an object whose values are arrays of evidence version IDs,
+   * e.g. { documentIds: [1,2], imageIds: [3] }, or occasionally a flat number[].
+   */
+  evidenceIds?: Record<string, unknown> | number[];
 }
 
 export interface DrataTask {
@@ -106,6 +112,23 @@ export interface DrataEvidenceItem {
   versions?: DrataEvidenceVersion[];
   archivedAt?: string | null;
   createdAt?: string;
+}
+
+/**
+ * Response shape from GET /workspaces/{id}/evidence-library/versions/{versionId}
+ * (EvidenceLibraryPublicV2Controller_getEvidenceLibraryVersion)
+ */
+export interface DrataEvidenceLibraryVersion {
+  id: number;
+  /** Presigned or direct download URL for the evidence file */
+  downloadUrl?: string;
+  mimeType?: string;
+  name?: string;
+  size?: number;
+  createdAt?: string;
+  /** Parent evidence library item ID */
+  evidenceId?: number;
+  evidenceName?: string;
 }
 
 // ─── AI Summary types ─────────────────────────────────────────────────────────

@@ -6,7 +6,7 @@ import type {
   DrataRisk,
   DrataMonitoringTest,
   DrataEvent,
-  DrataEvidenceItem,
+  DrataEvidenceLibraryVersion,
   Workspace,
 } from "./types";
 
@@ -132,15 +132,38 @@ export class DrataClient {
     );
   }
 
-  async getEvidenceLibrary(workspaceId: number): Promise<DrataEvidenceItem[]> {
-    const extra = new URLSearchParams();
-    extra.append("expand[]", "versions");
-    extra.append("expand[]", "controls");
-    return this.fetchAll<DrataEvidenceItem>(
-      `/workspaces/${workspaceId}/evidence-library`,
-      extra,
-      500
+  /**
+   * Returns controls that have evidence attached (hasEvidence=true) with the
+   * evidenceIds object expanded so we can look up each version individually.
+   */
+  async getControlsWithEvidence(workspaceId: number): Promise<DrataControl[]> {
+    const extraParams = new URLSearchParams();
+    extraParams.set("hasEvidence", "true");
+    extraParams.append("expand[]", "evidenceIds");
+    extraParams.append("expand[]", "flags");
+    extraParams.append("expand[]", "frameworkTags");
+    extraParams.append("expand[]", "owners");
+    return this.fetchAll<DrataControl>(
+      `/workspaces/${workspaceId}/controls`,
+      extraParams
     );
+  }
+
+  /**
+   * Fetch a single evidence library version by ID.
+   * Returns null if the request fails (e.g. 404, permission).
+   */
+  async getEvidenceVersion(
+    workspaceId: number,
+    versionId: number
+  ): Promise<DrataEvidenceLibraryVersion | null> {
+    try {
+      return await this.request<DrataEvidenceLibraryVersion>(
+        `/workspaces/${workspaceId}/evidence-library/versions/${versionId}`
+      );
+    } catch {
+      return null;
+    }
   }
 
   async getEvents(workspaceId: number, limit = 20): Promise<DrataEvent[]> {
