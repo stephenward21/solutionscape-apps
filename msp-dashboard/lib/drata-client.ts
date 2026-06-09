@@ -6,6 +6,7 @@ import type {
   DrataRisk,
   DrataMonitoringTest,
   DrataEvent,
+  DrataEvidenceItem,
   Workspace,
 } from "./types";
 
@@ -127,6 +128,17 @@ export class DrataClient {
     return this.fetchAll<DrataMonitoringTest>(
       `/workspaces/${workspaceId}/monitoring-tests`,
       undefined,
+      500
+    );
+  }
+
+  async getEvidenceLibrary(workspaceId: number): Promise<DrataEvidenceItem[]> {
+    const extra = new URLSearchParams();
+    extra.append("expand[]", "versions");
+    extra.append("expand[]", "controls");
+    return this.fetchAll<DrataEvidenceItem>(
+      `/workspaces/${workspaceId}/evidence-library`,
+      extra,
       500
     );
   }

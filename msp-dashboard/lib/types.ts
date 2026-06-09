@@ -86,6 +86,92 @@ export interface DrataMonitoringTest {
   controls?: Array<{ id: number; name: string; code: string }>;
 }
 
+export interface DrataEvidenceVersion {
+  id: number;
+  /** Direct download URL to the actual evidence file */
+  source?: string;
+  mimeType?: string;
+  name?: string;
+  createdAt?: string;
+  size?: number;
+}
+
+export interface DrataEvidenceItem {
+  id: number;
+  name: string;
+  description?: string;
+  /** Controls this evidence is mapped to */
+  controls?: Array<{ id: number; name: string; code: string }>;
+  /** File versions (newest first when sorted by createdAt) — requires expand[]=versions */
+  versions?: DrataEvidenceVersion[];
+  archivedAt?: string | null;
+  createdAt?: string;
+}
+
+// ─── AI Summary types ─────────────────────────────────────────────────────────
+
+export type ActionPriority = "CRITICAL" | "HIGH" | "MEDIUM" | "LOW";
+export type ActionCategory = "CONTROL" | "TASK" | "RISK" | "TEST";
+
+export interface ActionItem {
+  id: string;
+  priority: ActionPriority;
+  category: ActionCategory;
+  title: string;
+  description: string;
+  reasoning: string;
+  suggestedAction: string;
+  relatedIds?: string[];
+}
+
+export interface AISummaryResult {
+  generatedAt: string;
+  workspaceId: number;
+  summary: string;
+  items: ActionItem[];
+}
+
+// ─── Evidence validation types ────────────────────────────────────────────────
+
+export type EvidenceAdequacy = "ADEQUATE" | "PARTIAL" | "INADEQUATE" | "UNRELATED";
+
+export interface EvidenceControlValidation {
+  controlId: number;
+  controlCode: string;
+  controlName: string;
+  frameworkTags: string[];
+  adequacy: EvidenceAdequacy;
+  confidence: "HIGH" | "MEDIUM" | "LOW";
+  finding: string;
+  gaps: string[];
+  recommendation: string;
+}
+
+export interface EvidenceValidationItem {
+  evidenceId: number;
+  evidenceName: string;
+  fileUrl: string;
+  mimeType: string;
+  fileDescription: string;
+  controlValidations: EvidenceControlValidation[];
+  /** true if we skipped this file (too large, unsupported type, download failed) */
+  skipped?: boolean;
+  skipReason?: string;
+}
+
+export interface EvidenceValidationResult {
+  generatedAt: string;
+  workspaceId: number;
+  totalEvidenceItems: number;
+  validatedCount: number;
+  skippedCount: number;
+  adequateCount: number;
+  partialCount: number;
+  inadequateCount: number;
+  unrelatedCount: number;
+  items: EvidenceValidationItem[];
+}
+
 // ─── Derived / computed types ─────────────────────────────────────────────────
 
 /** Canonical status derived from v2 nested flags object */

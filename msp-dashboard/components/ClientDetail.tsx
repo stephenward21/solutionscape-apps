@@ -18,15 +18,19 @@ import ControlsTable from "./ControlsTable";
 import TasksTable from "./TasksTable";
 import RisksTable from "./RisksTable";
 import EventsLog from "./EventsLog";
+import AISummaryPanel from "./AISummaryPanel";
+import EvidencePanel from "./EvidencePanel";
 
 interface Props {
   workspaceId: number;
 }
 
-type TabKey = "overview" | "controls" | "tasks" | "risks" | "events";
+type TabKey = "overview" | "controls" | "tasks" | "risks" | "events" | "ai-insights" | "evidence";
 
 const TABS: { key: TabKey; label: string }[] = [
   { key: "overview", label: "Overview" },
+  { key: "ai-insights", label: "AI Insights ✨" },
+  { key: "evidence", label: "Evidence" },
   { key: "controls", label: "Controls" },
   { key: "tasks", label: "Tasks" },
   { key: "risks", label: "Risks" },
@@ -465,6 +469,24 @@ export default function ClientDetail({ workspaceId }: Props) {
         {activeTab === "events" && (
           <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
             {eventsLoading ? <LoadingSpinner /> : <EventsLog events={events} />}
+          </div>
+        )}
+
+        {activeTab === "ai-insights" && (
+          <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
+            <h2 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-5">
+              AI-Prioritized Action Items
+            </h2>
+            <AISummaryPanel workspaceId={workspaceId} />
+          </div>
+        )}
+
+        {activeTab === "evidence" && (
+          <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
+            <h2 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-5">
+              Evidence Library Validation
+            </h2>
+            <EvidencePanel workspaceId={workspaceId} />
           </div>
         )}
       </main>
