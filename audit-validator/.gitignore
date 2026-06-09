@@ -1,0 +1,12 @@
+/node_modules
+/.next/
+/out/
+/build
+.env
+.env.local
+.env*.local
+# Evidence files — contain sensitive compliance data
+/data/uploads/
+/data/reports/
+*.tsbuildinfo
+next-env.d.ts
