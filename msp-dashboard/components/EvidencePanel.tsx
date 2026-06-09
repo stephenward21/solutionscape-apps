@@ -21,7 +21,7 @@ const CONFIDENCE_CONFIG: Record<
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 const ACCEPTED_EXTENSIONS =
-  ".pdf,.png,.jpg,.jpeg,.gif,.webp,.txt,.md,.csv,.json,.xml,.html,.log,.zip";
+  ".pdf,.png,.jpg,.jpeg,.gif,.webp,.txt,.md,.csv,.json,.xml,.html,.log,.docx,.xlsx,.xls,.zip";
 
 function detectSource(url: string): string {
   if (url.includes("docs.google.com/document"))    return "Google Doc";
@@ -38,7 +38,16 @@ function detectSource(url: string): string {
 function fileIcon(mimeType: string, name: string): string {
   if (mimeType === "application/pdf" || name.endsWith(".pdf")) return "📄";
   if (mimeType.startsWith("image/"))  return "🖼️";
-  if (mimeType === "text/csv" || name.endsWith(".csv"))  return "📊";
+  if (
+    mimeType === "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" ||
+    mimeType === "application/vnd.ms-excel" ||
+    name.endsWith(".xlsx") || name.endsWith(".xls")
+  ) return "📊";
+  if (
+    mimeType === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
+    name.endsWith(".docx")
+  ) return "📝";
+  if (mimeType === "text/csv" || name.endsWith(".csv")) return "📊";
   if (mimeType === "application/json" || name.endsWith(".json")) return "🔧";
   if (name.endsWith(".zip")) return "🗜️";
   return "📋";
@@ -232,7 +241,7 @@ export default function EvidencePanel({ workspaceId }: Props) {
 
             {/* Supported link types */}
             <div className="flex flex-wrap gap-1.5">
-              {["Google Drive", "Google Docs / Sheets / Slides", "OneDrive", "Direct URL", "Zip archive"].map((t) => (
+              {["Google Drive", "Google Docs / Sheets / Slides", "OneDrive", "Direct URL", "Zip / DOCX / XLSX"].map((t) => (
                 <span key={t} className="text-xs bg-white border border-slate-200 text-slate-500 px-2 py-0.5 rounded-full">
                   {t}
                 </span>
@@ -287,7 +296,7 @@ export default function EvidencePanel({ workspaceId }: Props) {
 
             {/* Supported types */}
             <div className="flex flex-wrap gap-1.5">
-              {["PDF", "PNG / JPG / WEBP", "TXT / MD / CSV / JSON", "ZIP (multi-file)"].map((t) => (
+              {["PDF", "DOCX", "XLSX / XLS / CSV", "PNG / JPG / WEBP", "TXT / MD / JSON", "ZIP (multi-file)"].map((t) => (
                 <span key={t} className="text-xs bg-white border border-slate-200 text-slate-500 px-2 py-0.5 rounded-full">
                   {t}
                 </span>

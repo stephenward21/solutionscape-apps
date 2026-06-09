@@ -16,12 +16,16 @@
  * Supported file types sent to Claude:
  *   - PDF, PNG, JPEG, GIF, WEBP (native vision/document blocks)
  *   - Plain text / Markdown / CSV / JSON / XML (text block)
+ *   - DOCX (converted to text via mammoth)
+ *   - XLSX / XLS (converted to CSV text via SheetJS)
  *
  * Zip files are extracted and each entry is analyzed individually.
  */
 
 import Anthropic from "@anthropic-ai/sdk";
 import AdmZip from "adm-zip";
+import mammoth from "mammoth";
+import * as XLSX from "xlsx";
 import type {
   DrataControl,
   ControlMappingResult,
@@ -206,21 +210,24 @@ function extractZip(buf: Buffer): DownloadedFile[] {
 // ─── MIME helpers ─────────────────────────────────────────────────────────────
 
 const EXT_MIME: Record<string, string> = {
-  pdf: "application/pdf",
-  png: "image/png",
-  jpg: "image/jpeg",
-  jpeg: "image/jpeg",
-  gif: "image/gif",
-  webp: "image/webp",
-  txt: "text/plain",
-  md: "text/plain",
+  pdf:      "application/pdf",
+  png:      "image/png",
+  jpg:      "image/jpeg",
+  jpeg:     "image/jpeg",
+  gif:      "image/gif",
+  webp:     "image/webp",
+  txt:      "text/plain",
+  md:       "text/plain",
   markdown: "text/plain",
-  csv: "text/csv",
-  json: "application/json",
-  xml: "application/xml",
-  html: "text/html",
-  htm: "text/html",
-  log: "text/plain",
+  csv:      "text/csv",
+  json:     "application/json",
+  xml:      "application/xml",
+  html:     "text/html",
+  htm:      "text/html",
+  log:      "text/plain",
+  docx:     "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  xlsx:     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  xls:      "application/vnd.ms-excel",
 };
 
 function guessMimeFromName(filename: string): string {
@@ -249,8 +256,52 @@ function isTextMime(mime: string): boolean {
   );
 }
 
+function isDocxMime(mime: string): boolean {
+  return mime === "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+}
+
+function isSpreadsheetMime(mime: string): boolean {
+  return (
+    mime === "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" ||
+    mime === "application/vnd.ms-excel"
+  );
+}
+
 function isClaudeSupported(mime: string): boolean {
-  return mime === "application/pdf" || isImageMime(mime) || isTextMime(mime);
+  return (
+    mime === "application/pdf" ||
+    isImageMime(mime) ||
+    isTextMime(mime) ||
+    isDocxMime(mime) ||
+    isSpreadsheetMime(mime)
+  );
+}
+
+// ─── Office document converters ───────────────────────────────────────────────
+
+async function convertDocxToText(buffer: Buffer): Promise<string | null> {
+  try {
+    const result = await mammoth.extractRawText({ buffer });
+    return result.value.trim() || null;
+  } catch {
+    return null;
+  }
+}
+
+function convertSpreadsheetToText(buffer: Buffer): string | null {
+  try {
+    const workbook = XLSX.read(buffer, { type: "buffer" });
+    const parts: string[] = [];
+    for (const sheetName of workbook.SheetNames) {
+      const sheet = workbook.Sheets[sheetName];
+      if (!sheet) continue;
+      const csv = XLSX.utils.sheet_to_csv(sheet);
+      if (csv.trim()) parts.push(`[Sheet: ${sheetName}]\n${csv}`);
+    }
+    return parts.length ? parts.join("\n\n") : null;
+  } catch {
+    return null;
+  }
 }
 
 // ─── Claude content block ─────────────────────────────────────────────────────
@@ -318,27 +369,55 @@ async function analyzeFiles(
   let analyzedCount = 0;
   let skippedCount = 0;
 
-  for (const file of filesToAnalyze) {
-    if (!isClaudeSupported(file.mimeType)) {
+  for (const rawFile of filesToAnalyze) {
+    if (!isClaudeSupported(rawFile.mimeType)) {
       fileResults.push({
-        fileName: file.name,
-        mimeType: file.mimeType,
-        size: file.buffer.length,
+        fileName: rawFile.name,
+        mimeType: rawFile.mimeType,
+        size: rawFile.buffer.length,
         fileDescription: "",
         recommendedControls: [],
         skipped: true,
-        skipReason: `Unsupported file type (${file.mimeType}) — Claude can read PDF, images, and text files`,
+        skipReason: `Unsupported file type (${rawFile.mimeType}) — supported: PDF, images, text, CSV, DOCX, XLSX`,
       });
       skippedCount++;
       continue;
     }
 
+    // Convert Office documents to plain text so Claude can read them
+    let file = rawFile;
+    if (isDocxMime(rawFile.mimeType)) {
+      const text = await convertDocxToText(rawFile.buffer);
+      if (!text) {
+        fileResults.push({
+          fileName: rawFile.name, mimeType: rawFile.mimeType, size: rawFile.buffer.length,
+          fileDescription: "", recommendedControls: [], skipped: true,
+          skipReason: "Could not extract text from DOCX — file may be corrupt or password-protected",
+        });
+        skippedCount++;
+        continue;
+      }
+      file = { ...rawFile, buffer: Buffer.from(text, "utf-8"), mimeType: "text/plain" };
+    } else if (isSpreadsheetMime(rawFile.mimeType)) {
+      const text = convertSpreadsheetToText(rawFile.buffer);
+      if (!text) {
+        fileResults.push({
+          fileName: rawFile.name, mimeType: rawFile.mimeType, size: rawFile.buffer.length,
+          fileDescription: "", recommendedControls: [], skipped: true,
+          skipReason: "Could not extract data from spreadsheet — file may be corrupt or password-protected",
+        });
+        skippedCount++;
+        continue;
+      }
+      file = { ...rawFile, buffer: Buffer.from(text, "utf-8"), mimeType: "text/plain" };
+    }
+
     const contentBlock = buildContentBlock(file);
     if (!contentBlock) {
       fileResults.push({
-        fileName: file.name,
-        mimeType: file.mimeType,
-        size: file.buffer.length,
+        fileName: rawFile.name,
+        mimeType: rawFile.mimeType,
+        size: rawFile.buffer.length,
         fileDescription: "",
         recommendedControls: [],
         skipped: true,
@@ -423,18 +502,18 @@ Return ONLY valid JSON (no markdown fences):
         .filter((rc): rc is RecommendedControlMapping => rc !== null);
 
       fileResults.push({
-        fileName: file.name,
-        mimeType: file.mimeType,
-        size: file.buffer.length,
+        fileName: rawFile.name,
+        mimeType: rawFile.mimeType,
+        size: rawFile.buffer.length,
         fileDescription: parsed.fileDescription ?? "",
         recommendedControls,
       });
       analyzedCount++;
     } catch (err) {
       fileResults.push({
-        fileName: file.name,
-        mimeType: file.mimeType,
-        size: file.buffer.length,
+        fileName: rawFile.name,
+        mimeType: rawFile.mimeType,
+        size: rawFile.buffer.length,
         fileDescription: "",
         recommendedControls: [],
         skipped: true,
