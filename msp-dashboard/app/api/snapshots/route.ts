@@ -1,15 +1,24 @@
 import { NextResponse } from "next/server";
-import { listWorkspaceNames } from "@/lib/drata-client";
+import { listWorkspaceEntries } from "@/lib/workspace-cache";
 import { loadSnapshot, isStale } from "@/lib/snapshot-store";
 import { buildFreshSnapshot, buildErrorSnapshot } from "@/lib/build-snapshot";
-import type { WorkspaceSnapshot } from "@/lib/types";
+import type { WorkspaceSnapshot, DrataWorkspace } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(): Promise<NextResponse> {
-  const workspaceNames = listWorkspaceNames();
+  let entries;
+  try {
+    entries = await listWorkspaceEntries();
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return NextResponse.json(
+      { error: `Failed to list workspaces: ${message}` },
+      { status: 500 }
+    );
+  }
 
-  if (workspaceNames.length === 0) {
+  if (entries.length === 0) {
     return NextResponse.json(
       { error: "No workspaces configured. Set DRATA_API_KEY or DRATA_TENANTS." },
       { status: 500 }
@@ -17,20 +26,19 @@ export async function GET(): Promise<NextResponse> {
   }
 
   const results = await Promise.allSettled(
-    workspaceNames.map(async (name): Promise<WorkspaceSnapshot> => {
-      const cached = loadSnapshot(name);
+    entries.map(async (entry): Promise<WorkspaceSnapshot> => {
+      const workspace: DrataWorkspace = { id: entry.id, name: entry.name };
+      const cached = loadSnapshot(entry.id);
 
       if (cached && !isStale(cached)) {
         return cached;
       }
 
-      // Stale or missing — fetch fresh
       try {
-        const fresh = await buildFreshSnapshot(name);
-        return fresh;
+        return await buildFreshSnapshot(workspace, entry.apiKey);
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
-        return buildErrorSnapshot(name, message, cached);
+        return buildErrorSnapshot(workspace, message, cached);
       }
     })
   );
@@ -39,7 +47,12 @@ export async function GET(): Promise<NextResponse> {
     if (result.status === "fulfilled") return result.value;
     const message =
       result.reason instanceof Error ? result.reason.message : String(result.reason);
-    return buildErrorSnapshot(workspaceNames[i], message, null);
+    const entry = entries[i];
+    return buildErrorSnapshot(
+      { id: entry?.id ?? 0, name: entry?.name ?? "Unknown" },
+      message,
+      null
+    );
   });
 
   return NextResponse.json({ snapshots });

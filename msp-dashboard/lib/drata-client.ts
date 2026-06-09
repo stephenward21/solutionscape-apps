@@ -1,4 +1,5 @@
 import type {
+  DrataWorkspace,
   DrataFramework,
   DrataControl,
   DrataTask,
@@ -17,20 +18,18 @@ interface CursorResponse<T> {
 
 export class DrataClient {
   private readonly apiKey: string;
-  private cachedWorkspaceId?: number;
   private cachedRiskRegisterId?: number;
 
   constructor(apiKey: string) {
     this.apiKey = apiKey;
   }
 
-  private async request<T>(
-    path: string,
-    params: Record<string, string | number | boolean | undefined> = {}
-  ): Promise<T> {
+  private async request<T>(path: string, searchParams?: URLSearchParams): Promise<T> {
     const url = new URL(`${BASE_URL}${path}`);
-    for (const [key, value] of Object.entries(params)) {
-      if (value !== undefined) url.searchParams.set(key, String(value));
+    if (searchParams) {
+      searchParams.forEach((value, key) => {
+        url.searchParams.append(key, value);
+      });
     }
     const res = await fetch(url.toString(), {
       headers: {
@@ -47,15 +46,23 @@ export class DrataClient {
   }
 
   /** Fetch all pages of a cursor-paginated endpoint. */
-  private async fetchAll<T>(path: string, max = 1000): Promise<T[]> {
+  private async fetchAll<T>(
+    path: string,
+    extraParams?: URLSearchParams,
+    max = 1000
+  ): Promise<T[]> {
     const items: T[] = [];
     let cursor: string | null | undefined = undefined;
     do {
-      const params: Record<string, string | number | boolean | undefined> = {
-        size: 100,
-        includeTotalCount: true,
-        ...(cursor ? { cursor } : {}),
-      };
+      const params = new URLSearchParams();
+      params.set("size", "100");
+      params.set("includeTotalCount", "true");
+      if (cursor) params.set("cursor", cursor);
+      if (extraParams) {
+        extraParams.forEach((value, key) => {
+          params.append(key, value);
+        });
+      }
       const result = await this.request<CursorResponse<T>>(path, params);
       const page = result.data ?? [];
       items.push(...page);
@@ -64,25 +71,25 @@ export class DrataClient {
     return items;
   }
 
-  private async resolveWorkspaceId(): Promise<number> {
-    if (this.cachedWorkspaceId) return this.cachedWorkspaceId;
-    const result = await this.request<CursorResponse<{ id: number; primary?: boolean }>>(
+  async listWorkspaces(): Promise<DrataWorkspace[]> {
+    const params = new URLSearchParams();
+    params.set("size", "50");
+    params.set("includeTotalCount", "true");
+    const result = await this.request<CursorResponse<DrataWorkspace>>(
       "/workspaces",
-      { size: 50, includeTotalCount: true }
+      params
     );
-    const workspaces = result.data ?? [];
-    if (!workspaces.length) throw new Error("No workspaces found in this account");
-    const primary = workspaces.find((w) => w.primary) ?? workspaces[0];
-    if (!primary) throw new Error("No workspaces found in this account");
-    this.cachedWorkspaceId = primary.id;
-    return this.cachedWorkspaceId;
+    return result.data ?? [];
   }
 
   private async resolveRiskRegisterId(): Promise<number> {
     if (this.cachedRiskRegisterId) return this.cachedRiskRegisterId;
+    const params = new URLSearchParams();
+    params.set("size", "1");
+    params.set("includeTotalCount", "true");
     const result = await this.request<CursorResponse<{ id: number }>>(
       "/risk-registers",
-      { size: 1, includeTotalCount: true }
+      params
     );
     const registers = result.data ?? [];
     if (!registers.length) throw new Error("No risk registers found");
@@ -92,38 +99,46 @@ export class DrataClient {
     return this.cachedRiskRegisterId;
   }
 
-  async getFrameworks(): Promise<DrataFramework[]> {
-    const wsId = await this.resolveWorkspaceId();
-    return this.fetchAll<DrataFramework>(`/workspaces/${wsId}/frameworks`);
+  async getFrameworks(workspaceId: number): Promise<DrataFramework[]> {
+    return this.fetchAll<DrataFramework>(`/workspaces/${workspaceId}/frameworks`);
   }
 
-  async getControls(): Promise<DrataControl[]> {
-    const wsId = await this.resolveWorkspaceId();
-    return this.fetchAll<DrataControl>(`/workspaces/${wsId}/controls`);
+  async getControls(workspaceId: number): Promise<DrataControl[]> {
+    const extraParams = new URLSearchParams();
+    extraParams.append("expand[]", "flags");
+    extraParams.append("expand[]", "frameworkTags");
+    extraParams.append("expand[]", "owners");
+    return this.fetchAll<DrataControl>(
+      `/workspaces/${workspaceId}/controls`,
+      extraParams
+    );
   }
 
-  async getTasks(): Promise<DrataTask[]> {
-    const wsId = await this.resolveWorkspaceId();
-    return this.fetchAll<DrataTask>(`/workspaces/${wsId}/tasks`, 500);
+  async getTasks(workspaceId: number): Promise<DrataTask[]> {
+    return this.fetchAll<DrataTask>(`/workspaces/${workspaceId}/tasks`, undefined, 500);
   }
 
   async getRisks(): Promise<DrataRisk[]> {
     const regId = await this.resolveRiskRegisterId();
-    return this.fetchAll<DrataRisk>(`/risk-registers/${regId}/risks`, 500);
+    return this.fetchAll<DrataRisk>(`/risk-registers/${regId}/risks`, undefined, 500);
   }
 
-  async getMonitoringTests(): Promise<DrataMonitoringTest[]> {
-    const wsId = await this.resolveWorkspaceId();
-    return this.fetchAll<DrataMonitoringTest>(`/workspaces/${wsId}/monitoring-tests`, 500);
+  async getMonitoringTests(workspaceId: number): Promise<DrataMonitoringTest[]> {
+    return this.fetchAll<DrataMonitoringTest>(
+      `/workspaces/${workspaceId}/monitoring-tests`,
+      undefined,
+      500
+    );
   }
 
-  async getEvents(limit = 20): Promise<DrataEvent[]> {
+  async getEvents(workspaceId: number, limit = 20): Promise<DrataEvent[]> {
     // Events endpoint may not be available in all plans — fall back gracefully
     try {
-      const wsId = await this.resolveWorkspaceId();
+      const params = new URLSearchParams();
+      params.set("size", String(limit));
       const result = await this.request<CursorResponse<DrataEvent>>(
-        `/workspaces/${wsId}/events`,
-        { size: limit }
+        `/workspaces/${workspaceId}/events`,
+        params
       );
       return result.data ?? [];
     } catch {
@@ -132,7 +147,7 @@ export class DrataClient {
   }
 }
 
-function getWorkspaces(): Workspace[] {
+function getTenantConfigs(): Workspace[] {
   const tenantsEnv = process.env.DRATA_TENANTS;
   if (tenantsEnv) {
     try {
@@ -147,19 +162,16 @@ function getWorkspaces(): Workspace[] {
   return [];
 }
 
-export function getClient(workspaceName?: string): DrataClient {
-  const workspaces = getWorkspaces();
-  if (!workspaces.length) {
-    throw new Error("No Drata credentials configured. Set DRATA_API_KEY or DRATA_TENANTS.");
-  }
-  if (!workspaceName || workspaceName === "Default") {
-    return new DrataClient(workspaces[0]!.apiKey);
-  }
-  const ws = workspaces.find((w) => w.name.toLowerCase() === workspaceName.toLowerCase());
-  if (!ws) throw new Error(`Workspace "${workspaceName}" not found in configuration`);
-  return new DrataClient(ws.apiKey);
+/** Returns a DrataClient for the given API key */
+export function getClientForKey(apiKey: string): DrataClient {
+  return new DrataClient(apiKey);
 }
 
-export function listWorkspaceNames(): string[] {
-  return getWorkspaces().map((w) => w.name);
+/** Returns all tenant API keys + labels */
+export function getTenants(): Workspace[] {
+  const tenants = getTenantConfigs();
+  if (!tenants.length) {
+    throw new Error("No Drata credentials configured. Set DRATA_API_KEY or DRATA_TENANTS.");
+  }
+  return tenants;
 }

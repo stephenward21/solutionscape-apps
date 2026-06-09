@@ -1,50 +1,34 @@
 import type {
-  DrataControl,
   DrataFramework,
   DrataTask,
   DrataRisk,
   FrameworkHealth,
 } from "./types";
-import { getControlStatus, getRiskSeverity, nameToSlug } from "./types";
+import { getRiskSeverity, nameToSlug } from "./types";
 
-export function calculateFrameworkHealth(
-  controls: DrataControl[],
-  framework: DrataFramework
-): FrameworkHealth {
-  // v2 controls carry frameworkTags: string[] — match by framework name
-  const frameworkControls = controls.filter((c) =>
-    c.frameworkTags?.some(
-      (tag) => tag.toLowerCase() === framework.name.toLowerCase()
-    )
-  );
-
-  const active = frameworkControls.filter((c) => !c.archivedAt);
-  const passing = active.filter((c) => getControlStatus(c) === "PASSING").length;
-  const failing = active.filter((c) => getControlStatus(c) === "FAILING").length;
-  const needsAttention = active.filter(
-    (c) => getControlStatus(c) === "NEEDS_ATTENTION"
-  ).length;
-  // Score denominator: only monitored controls (failing + passing)
-  const monitored = passing + failing;
-  const score = monitored > 0 ? Math.round((passing / monitored) * 100) : 0;
+export function calculateFrameworkHealth(framework: DrataFramework): FrameworkHealth {
+  const total = framework.numInScopeRequirements ?? 0;
+  const passing = framework.numReadyInScopeRequirements ?? 0;
+  const failing = total - passing;
+  const score = total > 0 ? Math.round((passing / total) * 100) : 0;
 
   return {
     id: framework.id,
     name: framework.name,
-    slug: nameToSlug(framework.name),
+    slug: framework.slug ?? nameToSlug(framework.name),
     passingCount: passing,
     failingCount: failing,
-    needsAttentionCount: needsAttention,
-    totalCount: active.length,
+    needsAttentionCount: 0, // not derivable from framework-level fields
+    totalCount: total,
     score,
   };
 }
 
 export function calculateOverallScore(frameworks: FrameworkHealth[]): number {
-  const relevant = frameworks.filter((f) => f.passingCount + f.failingCount > 0);
+  const relevant = frameworks.filter((f) => f.totalCount > 0);
   if (!relevant.length) return 0;
-  const totalWeight = relevant.reduce((s, f) => s + f.passingCount + f.failingCount, 0);
-  const weighted = relevant.reduce((s, f) => s + f.score * (f.passingCount + f.failingCount), 0);
+  const totalWeight = relevant.reduce((s, f) => s + f.totalCount, 0);
+  const weighted = relevant.reduce((s, f) => s + f.score * f.totalCount, 0);
   return totalWeight > 0 ? Math.round(weighted / totalWeight) : 0;
 }
 

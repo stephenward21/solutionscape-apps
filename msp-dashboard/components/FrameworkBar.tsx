@@ -4,51 +4,63 @@ import type { FrameworkHealth } from "@/lib/types";
 
 interface Props {
   framework: FrameworkHealth;
+  compact?: boolean;
 }
 
-export default function FrameworkBar({ framework }: Props) {
-  const { name, passingCount, failingCount, needsAttentionCount, totalCount, score } =
-    framework;
+// Shorten common framework names
+function shortName(name: string): string {
+  return name
+    .replace(/Service Organization Controls?/i, "SOC")
+    .replace(/International Organization for Standardization/i, "ISO")
+    .replace(/Health Insurance Portability and Accountability Act/i, "HIPAA")
+    .replace(/Payment Card Industry Data Security Standard/i, "PCI DSS")
+    .replace(/General Data Protection Regulation/i, "GDPR");
+}
 
+export default function FrameworkBar({ framework, compact = false }: Props) {
+  const { name, passingCount, totalCount, score } = framework;
   const passingPct = totalCount > 0 ? (passingCount / totalCount) * 100 : 0;
-  const needsAttentionPct =
-    totalCount > 0 ? (needsAttentionCount / totalCount) * 100 : 0;
-  const failingPct = totalCount > 0 ? (failingCount / totalCount) * 100 : 0;
 
-  // Shorten common framework names
-  const shortName = name
-    .replace("Service Organization Control", "SOC")
-    .replace("International Organization for Standardization", "ISO")
-    .replace("Health Insurance Portability and Accountability Act", "HIPAA")
-    .replace("Payment Card Industry Data Security Standard", "PCI DSS")
-    .replace("General Data Protection Regulation", "GDPR");
+  const displayName = shortName(name);
 
-  return (
-    <div className="flex items-center gap-2 w-full">
-      <span
-        className="text-xs text-slate-600 w-24 flex-shrink-0 truncate"
-        title={name}
-      >
-        {shortName}
-      </span>
-      <div className="flex-1 h-2 bg-slate-100 rounded-full overflow-hidden">
-        <div className="flex h-full">
+  if (compact) {
+    return (
+      <div className="flex items-center gap-2 w-full">
+        <span className="text-xs text-slate-500 w-20 flex-shrink-0 truncate" title={name}>
+          {displayName}
+        </span>
+        <div className="flex-1 h-1.5 bg-slate-100 rounded-full overflow-hidden">
           <div
-            className="bg-green-500 h-full transition-all"
+            className="h-full bg-slate-700 rounded-full transition-all"
             style={{ width: `${passingPct}%` }}
           />
-          <div
-            className="bg-amber-400 h-full transition-all"
-            style={{ width: `${needsAttentionPct}%` }}
-          />
-          <div
-            className="bg-red-500 h-full transition-all"
-            style={{ width: `${failingPct}%` }}
-          />
         </div>
+        <span className="text-xs font-semibold text-slate-700 w-8 text-right flex-shrink-0">
+          {score}%
+        </span>
+        <span className="text-xs text-slate-400 w-14 flex-shrink-0 text-right">
+          {passingCount}/{totalCount}
+        </span>
       </div>
-      <span className="text-xs font-medium text-slate-700 w-9 text-right flex-shrink-0">
+    );
+  }
+
+  return (
+    <div className="flex items-center gap-3 w-full">
+      <span className="text-sm text-slate-600 w-28 flex-shrink-0 truncate" title={name}>
+        {displayName}
+      </span>
+      <div className="flex-1 h-2 bg-slate-100 rounded-full overflow-hidden">
+        <div
+          className="h-full bg-slate-700 rounded-full transition-all"
+          style={{ width: `${passingPct}%` }}
+        />
+      </div>
+      <span className="text-sm font-semibold text-slate-800 w-10 text-right flex-shrink-0">
         {score}%
+      </span>
+      <span className="text-xs text-slate-400 w-16 flex-shrink-0 text-right">
+        {passingCount}/{totalCount} ready
       </span>
     </div>
   );

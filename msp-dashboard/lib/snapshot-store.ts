@@ -10,24 +10,20 @@ function ensureDir(): void {
   }
 }
 
-function workspaceSlug(workspaceName: string): string {
-  return workspaceName.toLowerCase().replace(/\s+/g, "-");
-}
-
-function snapshotPath(workspaceName: string): string {
-  return path.join(SNAPSHOTS_DIR, `${workspaceSlug(workspaceName)}.json`);
+function snapshotPath(workspaceId: number): string {
+  return path.join(SNAPSHOTS_DIR, `${workspaceId}.json`);
 }
 
 export function saveSnapshot(snapshot: WorkspaceSnapshot): void {
   ensureDir();
-  const filePath = snapshotPath(snapshot.workspaceName);
+  const filePath = snapshotPath(snapshot.workspaceId);
 
   // Load existing history before overwriting
-  const existing = loadSnapshot(snapshot.workspaceName);
+  const existing = loadSnapshot(snapshot.workspaceId);
   const existingHistory: HistoryPoint[] = existing?.history ?? [];
 
   // Append today's score point (deduplicate by date)
-  const todayDate = new Date().toISOString().split("T")[0];
+  const todayDate = new Date().toISOString().split("T")[0] ?? "";
   const filtered = existingHistory.filter((p) => p.date !== todayDate);
   const newHistory: HistoryPoint[] = [
     ...filtered,
@@ -44,8 +40,8 @@ export function saveSnapshot(snapshot: WorkspaceSnapshot): void {
   fs.writeFileSync(filePath, JSON.stringify(toSave, null, 2), "utf-8");
 }
 
-export function loadSnapshot(workspaceName: string): WorkspaceSnapshot | null {
-  const filePath = snapshotPath(workspaceName);
+export function loadSnapshot(workspaceId: number): WorkspaceSnapshot | null {
+  const filePath = snapshotPath(workspaceId);
   if (!fs.existsSync(filePath)) return null;
   try {
     const raw = fs.readFileSync(filePath, "utf-8");

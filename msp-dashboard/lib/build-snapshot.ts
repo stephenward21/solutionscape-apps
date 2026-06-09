@@ -1,6 +1,6 @@
-import type { WorkspaceSnapshot } from "./types";
+import type { WorkspaceSnapshot, DrataWorkspace } from "./types";
 import { getControlStatus } from "./types";
-import { getClient } from "./drata-client";
+import { getClientForKey } from "./drata-client";
 import {
   calculateFrameworkHealth,
   calculateOverallScore,
@@ -12,22 +12,21 @@ import {
 import { saveSnapshot, loadSnapshot } from "./snapshot-store";
 
 export async function buildFreshSnapshot(
-  workspaceName: string
+  workspace: DrataWorkspace,
+  apiKey: string
 ): Promise<WorkspaceSnapshot> {
-  const client = getClient(workspaceName);
+  const client = getClientForKey(apiKey);
 
   const [frameworks, controls, tasks, risks, tests, events] = await Promise.all([
-    client.getFrameworks(),
-    client.getControls(),
-    client.getTasks(),
+    client.getFrameworks(workspace.id),
+    client.getControls(workspace.id),
+    client.getTasks(workspace.id),
     client.getRisks(),
-    client.getMonitoringTests(),
-    client.getEvents(20),
+    client.getMonitoringTests(workspace.id),
+    client.getEvents(workspace.id, 20),
   ]);
 
-  const frameworkHealthList = frameworks.map((fw) =>
-    calculateFrameworkHealth(controls, fw)
-  );
+  const frameworkHealthList = frameworks.map((fw) => calculateFrameworkHealth(fw));
 
   const overallScore = calculateOverallScore(frameworkHealthList);
   const ragStatus = getRagStatus(overallScore);
@@ -45,11 +44,12 @@ export async function buildFreshSnapshot(
   const failingTests = tests.filter((t) => t.checkResultStatus === "FAILED").length;
 
   // Load existing history so it can be preserved by saveSnapshot
-  const existing = loadSnapshot(workspaceName);
+  const existing = loadSnapshot(workspace.id);
   const existingHistory = existing?.history ?? [];
 
   const snapshot: WorkspaceSnapshot = {
-    workspaceName,
+    workspaceId: workspace.id,
+    workspaceName: workspace.name,
     capturedAt: new Date().toISOString(),
     stale: false,
     frameworks: frameworkHealthList,
@@ -71,16 +71,17 @@ export async function buildFreshSnapshot(
   saveSnapshot(snapshot);
 
   // Return the saved version (with updated history)
-  return loadSnapshot(workspaceName) ?? snapshot;
+  return loadSnapshot(workspace.id) ?? snapshot;
 }
 
 export function buildErrorSnapshot(
-  workspaceName: string,
+  workspace: DrataWorkspace,
   errorMessage: string,
   existing: WorkspaceSnapshot | null
 ): WorkspaceSnapshot {
   return {
-    workspaceName,
+    workspaceId: workspace.id,
+    workspaceName: workspace.name,
     capturedAt: existing?.capturedAt ?? new Date().toISOString(),
     stale: true,
     frameworks: existing?.frameworks ?? [],

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
-import { getClient } from "@/lib/drata-client";
+import { getClientForKey } from "@/lib/drata-client";
 import { getOverdueTasks, getUpcomingTasks } from "@/lib/health-calculator";
+import { getWorkspaceEntry } from "@/lib/workspace-cache";
 
 export const dynamic = "force-dynamic";
 
@@ -8,13 +9,21 @@ export async function GET(
   req: Request,
   { params }: { params: { workspace: string } }
 ): Promise<NextResponse> {
-  const workspaceName = decodeURIComponent(params.workspace);
+  const workspaceId = parseInt(params.workspace, 10);
+  if (isNaN(workspaceId)) {
+    return NextResponse.json({ error: "Invalid workspace ID" }, { status: 400 });
+  }
+
   const { searchParams } = new URL(req.url);
   const filter = searchParams.get("filter") ?? "all";
 
   try {
-    const client = getClient(workspaceName);
-    const allTasks = await client.getTasks();
+    const entry = await getWorkspaceEntry(workspaceId);
+    if (!entry) {
+      return NextResponse.json({ error: `Workspace ${workspaceId} not found` }, { status: 404 });
+    }
+    const client = getClientForKey(entry.apiKey);
+    const allTasks = await client.getTasks(workspaceId);
 
     const overdue = getOverdueTasks(allTasks);
     const upcoming = getUpcomingTasks(allTasks);

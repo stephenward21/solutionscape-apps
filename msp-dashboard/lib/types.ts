@@ -7,11 +7,32 @@ export interface Workspace {
 
 // ─── Drata v2 API shapes ─────────────────────────────────────────────────────
 
+export interface DrataWorkspace {
+  id: number;
+  name: string;
+  primary?: boolean;
+  description?: string;
+}
+
 export interface DrataFramework {
   id: number;
   name: string;
-  status?: string;
-  // slug is not returned by v2 API — derive with nameToSlug()
+  slug?: string;
+  tag?: string;
+  isReady?: boolean;
+  isEnabled?: boolean;
+  numInScopeControls?: number;
+  numInScopeRequirements?: number;
+  numReadyInScopeRequirements?: number;
+}
+
+export interface DrataControlFlags {
+  isReady?: string | boolean;   // API returns "true"/"false" string OR boolean
+  isMonitored?: boolean;
+  hasEvidence?: boolean;
+  hasOwner?: boolean;
+  hasPolicy?: boolean;
+  hasTicket?: string | boolean; // API returns "true"/"false" string OR boolean
 }
 
 export interface DrataControl {
@@ -19,13 +40,8 @@ export interface DrataControl {
   name: string;
   code?: string;
   description?: string;
-  // v2 uses boolean flags instead of a status string
-  isMonitored?: boolean;
-  hasEvidence?: boolean;
-  hasOwner?: boolean;
-  isReady?: boolean;        // true = effectively "passing"
-  hasPassingTest?: boolean;
-  frameworkTags?: string[]; // e.g. ["SOC 2", "ISO 27001:2022"]
+  flags?: DrataControlFlags;
+  frameworkTags?: string[]; // e.g. ["SOC_2", "ISO_27001"]
   archivedAt?: string | null;
   owners?: Array<{ id: number; firstName?: string; lastName?: string; email?: string }>;
 }
@@ -72,13 +88,17 @@ export interface DrataMonitoringTest {
 
 // ─── Derived / computed types ─────────────────────────────────────────────────
 
-/** Canonical status derived from v2 boolean flags */
+/** Canonical status derived from v2 nested flags object */
 export type ControlStatus = "PASSING" | "FAILING" | "NEEDS_ATTENTION" | "NOT_APPLICABLE";
+
+function isTruthy(val: string | boolean | undefined): boolean {
+  return val === true || val === "true";
+}
 
 export function getControlStatus(control: DrataControl): ControlStatus {
   if (control.archivedAt) return "NOT_APPLICABLE";
-  if (control.isReady) return "PASSING";
-  if (control.isMonitored) return "FAILING";
+  if (isTruthy(control.flags?.isReady)) return "PASSING";
+  if (control.flags?.isMonitored === true) return "FAILING";
   return "NEEDS_ATTENTION";
 }
 
@@ -108,7 +128,7 @@ export interface FrameworkHealth {
   failingCount: number;
   needsAttentionCount: number;
   totalCount: number;
-  score: number;             // 0–100 % passing of monitored controls
+  score: number;             // 0–100 % (numReadyInScopeRequirements / numInScopeRequirements)
 }
 
 export interface HistoryPoint {
@@ -117,6 +137,7 @@ export interface HistoryPoint {
 }
 
 export interface WorkspaceSnapshot {
+  workspaceId: number;
   workspaceName: string;
   capturedAt: string;
   stale: boolean;

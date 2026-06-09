@@ -5,6 +5,6 @@ interface Props {
 }
 
 export default function ClientDetailPage({ params }: Props) {
-  const workspaceName = decodeURIComponent(params.workspace);
-  return <ClientDetail workspaceName={workspaceName} />;
+  const workspaceId = parseInt(params.workspace, 10);
+  return <ClientDetail workspaceId={workspaceId} />;
 }
