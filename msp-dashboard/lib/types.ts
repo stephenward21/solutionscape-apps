@@ -87,9 +87,46 @@ export interface DrataEvent {
 export interface DrataMonitoringTest {
   id: number;
   name?: string;
-  checkResultStatus?: string; // READY | PASSED | FAILED | ERROR | PREAUDIT
-  checkStatus?: string;       // UNUSED | NEW | ENABLED | DISABLED | TESTING
+  description?: string;
+  checkResultStatus?: string; // PASSED | FAILED | ERROR | PREAUDIT | NA | READY
+  checkStatus?: string;       // ENABLED | DISABLED | UNUSED | NEW | TESTING
   controls?: Array<{ id: number; name: string; code: string }>;
+  /** When the test last ran */
+  lastCheckedAt?: string;
+  /** When the test first entered a failing/error state — null if currently passing */
+  failingSince?: string;
+  /** Integration or service being monitored (e.g. "AWS", "GitHub") */
+  sourceName?: string;
+  source?: string;
+  /** Human-readable steps to remediate a failing test */
+  remediationInstructions?: string;
+  /** How often the test runs */
+  frequency?: string;
+  /** Severity tier assigned to the test */
+  severity?: string;
+}
+
+// ─── Monitoring Tests AI types ────────────────────────────────────────────────
+
+export interface TestPriorityItem {
+  id: string;
+  testId: number;
+  testName: string;
+  priority: "CRITICAL" | "HIGH" | "MEDIUM" | "LOW";
+  controlsAffected: Array<{ code: string; name: string }>;
+  reasoning: string;
+  failingSince?: string;
+  suggestedAction: string;
+  estimatedImpact: string;
+}
+
+export interface TestsAISummaryResult {
+  generatedAt: string;
+  workspaceId: number;
+  overallHealthSummary: string;
+  failingCount: number;
+  errorCount: number;
+  priorityItems: TestPriorityItem[];
 }
 
 export interface DrataEvidenceVersion {

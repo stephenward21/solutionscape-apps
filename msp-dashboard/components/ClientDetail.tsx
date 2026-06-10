@@ -20,21 +20,23 @@ import RisksTable from "./RisksTable";
 import EventsLog from "./EventsLog";
 import AISummaryPanel from "./AISummaryPanel";
 import EvidencePanel from "./EvidencePanel";
+import MonitoringTestsPanel from "./MonitoringTestsPanel";
 
 interface Props {
   workspaceId: number;
 }
 
-type TabKey = "overview" | "controls" | "tasks" | "risks" | "events" | "ai-insights" | "evidence";
+type TabKey = "overview" | "controls" | "tasks" | "risks" | "events" | "ai-insights" | "evidence" | "tests";
 
 const TABS: { key: TabKey; label: string }[] = [
-  { key: "overview", label: "Overview" },
+  { key: "overview",    label: "Overview" },
   { key: "ai-insights", label: "AI Insights ✨" },
-  { key: "evidence", label: "Control Mapper 🗂️" },
-  { key: "controls", label: "Controls" },
-  { key: "tasks", label: "Tasks" },
-  { key: "risks", label: "Risks" },
-  { key: "events", label: "Events" },
+  { key: "tests",       label: "Monitoring Tests" },
+  { key: "evidence",    label: "Control Mapper 🗂️" },
+  { key: "controls",    label: "Controls" },
+  { key: "tasks",       label: "Tasks" },
+  { key: "risks",       label: "Risks" },
+  { key: "events",      label: "Events" },
 ];
 
 type ControlFilter = "all" | "FAILING" | "NEEDS_ATTENTION" | "PASSING";
@@ -478,6 +480,15 @@ export default function ClientDetail({ workspaceId }: Props) {
               AI-Prioritized Action Items
             </h2>
             <AISummaryPanel workspaceId={workspaceId} />
+          </div>
+        )}
+
+        {activeTab === "tests" && (
+          <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
+            <h2 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-5">
+              Monitoring Tests
+            </h2>
+            <MonitoringTestsPanel workspaceId={workspaceId} />
           </div>
         )}
 
