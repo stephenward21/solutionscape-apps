@@ -114,7 +114,7 @@ Return ONLY valid JSON — no markdown, no extra text:
     }
   ]
 }
-Rules: include ALL failing/error tests, ordered by priority descending. Return ONLY valid JSON.`;
+Rules: return the TOP 20 most important failing/error tests, ordered by priority descending. Omit lower-priority tests if there are more than 20. Return ONLY valid JSON.`;
 }
 
 export async function getTestsAISummary(
@@ -153,7 +153,7 @@ export async function getTestsAISummary(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const message = await (client.messages.create as (p: any) => Promise<Anthropic.Message>)({
     model: "claude-opus-4-7",
-    max_tokens: 4096,
+    max_tokens: 16000,
     thinking: { type: "adaptive" },
     messages: [{ role: "user", content: buildPrompt(workspaceName, tests) }],
   });
