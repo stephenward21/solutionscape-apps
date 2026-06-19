@@ -10,7 +10,11 @@ const STATUS_CONFIG: Record<AIToolPolicy["status"], { label: string; badge: stri
   UNREVIEWED:  { label: "Unreviewed",  badge: "bg-slate-100 text-slate-500",     dot: "bg-slate-300" },
 };
 
-export default function PolicyPanel() {
+interface PolicyPanelProps {
+  onAnalysisComplete?: (result: PolicyAnalysisResult) => void;
+}
+
+export default function PolicyPanel({ onAnalysisComplete }: PolicyPanelProps) {
   const [file, setFile] = useState<File | null>(null);
   const [dragging, setDragging] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -37,6 +41,7 @@ export default function PolicyPanel() {
       const data = await res.json() as PolicyAnalysisResult & { error?: string };
       if (!res.ok || data.error) throw new Error(data.error ?? "Analysis failed");
       setResult(data);
+      onAnalysisComplete?.(data);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {

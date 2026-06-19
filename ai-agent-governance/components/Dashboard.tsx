@@ -5,6 +5,7 @@ import { useSearchParams, useRouter } from "next/navigation";
 import PolicyPanel from "./PolicyPanel";
 import IdPPanel from "./IdPPanel";
 import ReportPanel from "./ReportPanel";
+import type { PolicyAnalysisResult, UserActivity } from "@/lib/types";
 
 type Tab = "policy" | "idp" | "report";
 
@@ -21,10 +22,17 @@ export default function Dashboard() {
     (searchParams.get("tab") as Tab) ?? "policy"
   );
 
+  // Shared state — populated by PolicyPanel and IdPPanel, consumed by ReportPanel
+  const [policyResult, setPolicyResult] = useState<PolicyAnalysisResult | null>(null);
+  const [idpUsers, setIdpUsers]         = useState<UserActivity[]>([]);
+
   function switchTab(tab: Tab) {
     setActiveTab(tab);
     router.replace(`/dashboard?tab=${tab}`, { scroll: false });
   }
+
+  const policyDone = policyResult !== null;
+  const idpDone    = idpUsers.length > 0;
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -52,26 +60,49 @@ export default function Dashboard() {
         {/* Tab nav */}
         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm mb-6">
           <nav className="flex border-b border-slate-100 px-4">
-            {TABS.map((tab) => (
-              <button
-                key={tab.key}
-                onClick={() => switchTab(tab.key)}
-                className={`flex items-center gap-2 px-4 py-4 text-sm font-medium border-b-2 transition-colors -mb-px ${
-                  activeTab === tab.key
-                    ? "border-brand-600 text-brand-600"
-                    : "border-transparent text-slate-500 hover:text-slate-700"
-                }`}
-              >
-                <span>{tab.icon}</span>
-                {tab.label}
-              </button>
-            ))}
+            {TABS.map((tab) => {
+              const done = tab.key === "policy" ? policyDone : tab.key === "idp" ? idpDone : false;
+              return (
+                <button
+                  key={tab.key}
+                  onClick={() => switchTab(tab.key)}
+                  className={`flex items-center gap-2 px-4 py-4 text-sm font-medium border-b-2 transition-colors -mb-px ${
+                    activeTab === tab.key
+                      ? "border-brand-600 text-brand-600"
+                      : "border-transparent text-slate-500 hover:text-slate-700"
+                  }`}
+                >
+                  <span>{tab.icon}</span>
+                  {tab.label}
+                  {done && (
+                    <span className="w-4 h-4 bg-emerald-500 rounded-full flex items-center justify-center shrink-0">
+                      <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                      </svg>
+                    </span>
+                  )}
+                </button>
+              );
+            })}
           </nav>
 
           <div className="p-6">
-            {activeTab === "policy" && <PolicyPanel />}
-            {activeTab === "idp"    && <IdPPanel />}
-            {activeTab === "report" && <ReportPanel />}
+            {activeTab === "policy" && (
+              <PolicyPanel
+                onAnalysisComplete={(result) => setPolicyResult(result)}
+              />
+            )}
+            {activeTab === "idp" && (
+              <IdPPanel
+                onConnected={(users) => setIdpUsers(users)}
+              />
+            )}
+            {activeTab === "report" && (
+              <ReportPanel
+                policyResult={policyResult}
+                idpUsers={idpUsers}
+              />
+            )}
           </div>
         </div>
       </div>

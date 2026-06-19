@@ -39,7 +39,11 @@ type Creds = GoogleCreds | MicrosoftCreds | OktaCreds | null;
 
 // ─── Panel ────────────────────────────────────────────────────────────────────
 
-export default function IdPPanel() {
+interface IdPPanelProps {
+  onConnected?: (users: UserActivity[]) => void;
+}
+
+export default function IdPPanel({ onConnected }: IdPPanelProps) {
   const [selected, setSelected]   = useState<IdPProvider | null>(null);
   const [creds, setCreds]         = useState<Creds>(null);
   const [activity, setActivity]   = useState<UserActivity[]>([]);
@@ -67,8 +71,10 @@ export default function IdPPanel() {
       });
       const data = await res.json() as { users?: UserActivity[]; error?: string };
       if (!res.ok || data.error) throw new Error(data.error ?? "Connection failed");
-      setActivity(data.users ?? []);
+      const users = data.users ?? [];
+      setActivity(users);
       setConnected(true);
+      onConnected?.(users);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {

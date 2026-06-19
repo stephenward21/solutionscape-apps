@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import type { GovernanceReport, UserComplianceRecord, ComplianceStatus } from "@/lib/types";
+import type { GovernanceReport, UserComplianceRecord, ComplianceStatus, PolicyAnalysisResult, UserActivity } from "@/lib/types";
 
 const STATUS_CONFIG: Record<ComplianceStatus, { label: string; badge: string; dot: string }> = {
   COMPLIANT:   { label: "Compliant",   badge: "bg-emerald-100 text-emerald-700", dot: "bg-emerald-500" },
@@ -10,7 +10,12 @@ const STATUS_CONFIG: Record<ComplianceStatus, { label: string; badge: string; do
   UNKNOWN:     { label: "Unknown",     badge: "bg-slate-100 text-slate-500",     dot: "bg-slate-300" },
 };
 
-export default function ReportPanel() {
+interface ReportPanelProps {
+  policyResult: PolicyAnalysisResult | null;
+  idpUsers: UserActivity[];
+}
+
+export default function ReportPanel({ policyResult, idpUsers }: ReportPanelProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [report, setReport] = useState<GovernanceReport | null>(null);
@@ -21,7 +26,11 @@ export default function ReportPanel() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch("/api/report", { method: "POST" });
+      const res = await fetch("/api/report", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ policyResult, users: idpUsers }),
+      });
       const data = await res.json() as GovernanceReport & { error?: string };
       if (!res.ok || data.error) throw new Error(data.error ?? "Report generation failed");
       setReport(data);
@@ -57,10 +66,13 @@ export default function ReportPanel() {
 
         <div className="bg-slate-50 border border-slate-200 rounded-xl p-8 text-center">
           <p className="text-3xl mb-3">📊</p>
-          <p className="text-sm font-semibold text-slate-700 mb-1">Ready to generate</p>
-          <p className="text-xs text-slate-400 mb-5">
-            Make sure you've analyzed a policy and connected your directory first.
-          </p>
+          <p className="text-sm font-semibold text-slate-700 mb-1">Generate Compliance Report</p>
+
+          {/* Step checklist */}
+          <div className="inline-flex flex-col gap-2 text-left mb-5 mt-2">
+            <StepCheck done={!!policyResult} label="AI Policy analyzed" />
+            <StepCheck done={idpUsers.length > 0} label={`Directory connected${idpUsers.length > 0 ? ` (${idpUsers.length} users)` : ""}`} />
+          </div>
 
           {error && (
             <div className="bg-rose-50 border border-rose-200 rounded-lg px-4 py-3 text-sm text-rose-700 mb-4 text-left">
@@ -299,6 +311,23 @@ function UserRecord({ user }: { user: UserComplianceRecord }) {
           )}
         </div>
       )}
+    </div>
+  );
+}
+
+function StepCheck({ done, label }: { done: boolean; label: string }) {
+  return (
+    <div className="flex items-center gap-2">
+      {done ? (
+        <span className="w-5 h-5 rounded-full bg-emerald-500 flex items-center justify-center shrink-0">
+          <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+          </svg>
+        </span>
+      ) : (
+        <span className="w-5 h-5 rounded-full border-2 border-slate-300 shrink-0" />
+      )}
+      <span className={`text-xs ${done ? "text-slate-700 font-medium" : "text-slate-400"}`}>{label}</span>
     </div>
   );
 }
