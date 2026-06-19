@@ -72,8 +72,17 @@ export interface DrataRisk {
 export interface DrataMonitoringTest {
   id: number;
   name?: string;
-  checkResultStatus?: string; // PASSED | FAILED | NOT_APPLICABLE
+  description?: string;
+  checkStatus?: string;        // ENABLED | DISABLED | UNUSED | NEW | TESTING
+  checkResultStatus?: string;  // PASSED | FAILED | ERROR | PREAUDIT | READY | NA
   lastCheckedAt?: string;
+  failingSince?: string;
+  sourceName?: string;
+  source?: string;
+  severity?: string;
+  remediationInstructions?: string;
+  frequency?: string;
+  controls?: Array<{ id: number; name: string; code: string }>;
 }
 
 // ─── Derived helpers ──────────────────────────────────────────────────────────
@@ -152,7 +161,12 @@ export interface PortalSnapshot {
   openHighRisks: number;
   openCriticalRisks: number;
 
+  // Monitoring tests — only counts ENABLED tests for result statuses
   failingTestsCount: number;
+  passingTestsCount: number;
+  enabledTestsCount: number;
+  inactiveTestsCount: number; // DISABLED + UNUSED + NEW + TESTING
+  testPassRate: number;       // 0–100
 }
 
 // ─── AI Priorities ────────────────────────────────────────────────────────────

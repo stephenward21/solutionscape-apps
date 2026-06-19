@@ -75,7 +75,14 @@ export async function buildSnapshot(config: PortalConfig): Promise<PortalSnapsho
   const highRisks = activeRisks.filter((r) => getRiskSeverity(r) === "HIGH").length;
   const criticalRisks = activeRisks.filter((r) => getRiskSeverity(r) === "CRITICAL").length;
 
-  const failingTests = tests.filter((t) => t.checkResultStatus === "FAILED").length;
+  const INACTIVE_TEST_STATUSES = new Set(["DISABLED", "UNUSED", "NEW", "TESTING"]);
+  const enabledTests   = tests.filter((t) => t.checkStatus === "ENABLED");
+  const inactiveTests  = tests.filter((t) => t.checkStatus && INACTIVE_TEST_STATUSES.has(t.checkStatus));
+  const failingTests   = enabledTests.filter((t) => t.checkResultStatus === "FAILED" || t.checkResultStatus === "ERROR");
+  const passingTests   = enabledTests.filter((t) => t.checkResultStatus === "PASSED");
+  const testPassRate   = enabledTests.length > 0
+    ? Math.round((passingTests.length / enabledTests.length) * 100)
+    : 0;
 
   return {
     workspaceId: config.workspaceId,
@@ -95,6 +102,10 @@ export async function buildSnapshot(config: PortalConfig): Promise<PortalSnapsho
     upcomingTasksCount: upcomingTasks.length,
     openHighRisks: highRisks,
     openCriticalRisks: criticalRisks,
-    failingTestsCount: failingTests,
+    failingTestsCount: failingTests.length,
+    passingTestsCount: passingTests.length,
+    enabledTestsCount: enabledTests.length,
+    inactiveTestsCount: inactiveTests.length,
+    testPassRate,
   };
 }

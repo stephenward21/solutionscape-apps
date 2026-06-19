@@ -96,9 +96,11 @@ export class DrataClient {
   }
 
   async getMonitoringTests(workspaceId: number): Promise<DrataMonitoringTest[]> {
+    const extra = new URLSearchParams();
+    extra.append("expand[]", "controls");
     return this.fetchAll<DrataMonitoringTest>(
       `/workspaces/${workspaceId}/monitoring-tests`,
-      undefined,
+      extra,
       500
     );
   }

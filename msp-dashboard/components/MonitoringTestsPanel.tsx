@@ -6,12 +6,18 @@ import type { DrataMonitoringTest, TestsAISummaryResult, TestPriorityItem } from
 // ─── Status config ────────────────────────────────────────────────────────────
 
 const STATUS_CONFIG: Record<string, { label: string; badge: string; dot: string }> = {
-  PASSED:   { label: "Passing",  badge: "bg-green-100 text-green-700",  dot: "bg-green-500" },
-  FAILED:   { label: "Failing",  badge: "bg-red-100 text-red-700",      dot: "bg-red-500" },
-  ERROR:    { label: "Error",    badge: "bg-orange-100 text-orange-700", dot: "bg-orange-500" },
-  PREAUDIT: { label: "Pre-audit",badge: "bg-slate-100 text-slate-500",  dot: "bg-slate-300" },
-  READY:    { label: "Ready",    badge: "bg-blue-100 text-blue-600",    dot: "bg-blue-400" },
-  NA:       { label: "N/A",      badge: "bg-slate-100 text-slate-400",  dot: "bg-slate-200" },
+  PASSED:   { label: "Passing",  badge: "bg-green-100 text-green-700",   dot: "bg-green-500" },
+  FAILED:   { label: "Failing",  badge: "bg-red-100 text-red-700",       dot: "bg-red-500" },
+  ERROR:    { label: "Error",    badge: "bg-orange-100 text-orange-700",  dot: "bg-orange-500" },
+  PREAUDIT: { label: "Pre-audit",badge: "bg-slate-100 text-slate-500",   dot: "bg-slate-300" },
+  READY:    { label: "Ready",    badge: "bg-blue-100 text-blue-600",     dot: "bg-blue-400" },
+  NA:       { label: "N/A",      badge: "bg-slate-100 text-slate-400",   dot: "bg-slate-200" },
+  // Operational / check-status values — shown when the test isn't actively running
+  INACTIVE: { label: "Inactive", badge: "bg-slate-100 text-slate-500",   dot: "bg-slate-300" },
+  DISABLED: { label: "Disabled", badge: "bg-slate-100 text-slate-500",   dot: "bg-slate-300" },
+  UNUSED:   { label: "Unused",   badge: "bg-slate-100 text-slate-400",   dot: "bg-slate-200" },
+  NEW:      { label: "New",      badge: "bg-blue-50 text-blue-500",      dot: "bg-blue-300" },
+  TESTING:  { label: "Testing",  badge: "bg-purple-50 text-purple-500",  dot: "bg-purple-300" },
 };
 
 const PRIORITY_CONFIG: Record<TestPriorityItem["priority"], { badge: string; bar: string }> = {
@@ -23,6 +29,24 @@ const PRIORITY_CONFIG: Record<TestPriorityItem["priority"], { badge: string; bar
 
 function statusCfg(status: string | undefined) {
   return STATUS_CONFIG[status ?? ""] ?? { label: status ?? "Unknown", badge: "bg-slate-100 text-slate-500", dot: "bg-slate-300" };
+}
+
+/**
+ * Effective display status for a test:
+ * - If checkStatus is DISABLED / UNUSED / NEW / TESTING the test isn't running —
+ *   show that operational state (grouped as INACTIVE) regardless of any stale
+ *   checkResultStatus (e.g. "READY") left over from before it was deactivated.
+ * - Otherwise (ENABLED or unknown) fall through to checkResultStatus.
+ */
+const INACTIVE_CHECK_STATUSES = new Set(["DISABLED", "UNUSED", "NEW", "TESTING"]);
+
+function effectiveStatus(test: DrataMonitoringTest): { key: string; label: string; badge: string; dot: string } {
+  if (test.checkStatus && INACTIVE_CHECK_STATUSES.has(test.checkStatus)) {
+    const cfg = STATUS_CONFIG[test.checkStatus] ?? STATUS_CONFIG["INACTIVE"]!;
+    return { key: "INACTIVE", ...cfg };
+  }
+  const key = test.checkResultStatus ?? "";
+  return { key, ...(STATUS_CONFIG[key] ?? { label: key || "Unknown", badge: "bg-slate-100 text-slate-500", dot: "bg-slate-300" }) };
 }
 
 function relativeTime(dateStr: string | undefined): string {
@@ -44,7 +68,8 @@ interface TestCounts {
   failing: number;
   error: number;
   preaudit: number;
-  disabled: number;
+  disabled: number;  // legacy: DISABLED + UNUSED only
+  inactive: number;  // DISABLED + UNUSED + NEW + TESTING
   enabled: number;
   passRate: number;
 }
@@ -55,7 +80,7 @@ interface Props {
   workspaceId: number;
 }
 
-type StatusFilter = "all" | "FAILED" | "ERROR" | "PASSED" | "PREAUDIT";
+type StatusFilter = "all" | "FAILED" | "ERROR" | "PASSED" | "PREAUDIT" | "INACTIVE";
 
 // ─── Main panel ───────────────────────────────────────────────────────────────
 
@@ -122,7 +147,8 @@ export default function MonitoringTestsPanel({ workspaceId }: Props) {
 
   // Filtered test list
   const filtered = tests.filter((t) => {
-    const statusMatch = statusFilter === "all" || t.checkResultStatus === statusFilter;
+    const eff = effectiveStatus(t);
+    const statusMatch = statusFilter === "all" || eff.key === statusFilter;
     const searchLow = search.toLowerCase();
     const searchMatch =
       !search ||
@@ -149,10 +175,10 @@ export default function MonitoringTestsPanel({ workspaceId }: Props) {
       {/* Stats strip */}
       {counts && (
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          <StatBox label="Total Tests"  value={counts.total}   color="text-slate-700"  bg="bg-slate-50" />
-          <StatBox label="Passing"      value={counts.passing} color="text-green-600"  bg="bg-green-50" />
-          <StatBox label="Failing"      value={counts.failing} color="text-red-600"    bg="bg-red-50" />
-          <StatBox label="Error"        value={counts.error}   color="text-orange-600" bg="bg-orange-50" />
+          <StatBox label="Total Tests"    value={counts.total}                      color="text-slate-700"  bg="bg-slate-50" />
+          <StatBox label="Passing"        value={counts.passing}                    color="text-green-600"  bg="bg-green-50" />
+          <StatBox label="Failing / Error" value={counts.failing + counts.error}    color="text-red-600"    bg="bg-red-50" />
+          <StatBox label="Inactive"       value={counts.inactive ?? counts.disabled} color="text-slate-500" bg="bg-slate-100" />
         </div>
       )}
 
@@ -177,7 +203,9 @@ export default function MonitoringTestsPanel({ workspaceId }: Props) {
           <div className="flex gap-4 mt-2 text-xs text-slate-400">
             <span>{counts.passing} passing</span>
             <span>{counts.failing + counts.error} failing/error</span>
-            {counts.disabled > 0 && <span>{counts.disabled} disabled</span>}
+            {(counts.inactive ?? counts.disabled) > 0 && (
+              <span>{counts.inactive ?? counts.disabled} inactive</span>
+            )}
           </div>
         </div>
       )}
@@ -195,7 +223,7 @@ export default function MonitoringTestsPanel({ workspaceId }: Props) {
       {/* Filter bar */}
       <div className="flex flex-wrap gap-2 items-center">
         <div className="flex gap-1 flex-wrap">
-          {(["all", "FAILED", "ERROR", "PASSED", "PREAUDIT"] as StatusFilter[]).map((f) => (
+          {(["all", "FAILED", "ERROR", "PASSED", "PREAUDIT", "INACTIVE"] as StatusFilter[]).map((f) => (
             <button
               key={f}
               onClick={() => setStatusFilter(f)}
@@ -205,10 +233,10 @@ export default function MonitoringTestsPanel({ workspaceId }: Props) {
                   : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
               }`}
             >
-              {f === "all" ? "All" : statusCfg(f).label}
+              {f === "all" ? "All" : statusCfg(f === "INACTIVE" ? "INACTIVE" : f).label}
               {f !== "all" && (
                 <span className="ml-1 opacity-60">
-                  ({tests.filter((t) => t.checkResultStatus === f).length})
+                  ({tests.filter((t) => effectiveStatus(t).key === f).length})
                 </span>
               )}
             </button>
@@ -391,7 +419,7 @@ function TestRow({
   expanded: boolean;
   onToggle: () => void;
 }) {
-  const cfg = statusCfg(test.checkResultStatus);
+  const cfg = effectiveStatus(test);
   const isFailing = test.checkResultStatus === "FAILED" || test.checkResultStatus === "ERROR";
 
   return (

@@ -9,8 +9,10 @@ import AIPriorities from "./AIPriorities";
 import ControlsPanel from "./ControlsPanel";
 import TasksPanel from "./TasksPanel";
 import RisksPanel from "./RisksPanel";
+import MonitoringTestsPanel from "./MonitoringTestsPanel";
+import ExecutiveReport from "./ExecutiveReport";
 
-type Tab = "overview" | "controls" | "tasks" | "risks";
+type Tab = "overview" | "controls" | "tasks" | "risks" | "tests" | "report";
 
 const RAG_COLORS = {
   green: "bg-emerald-500",
@@ -33,9 +35,11 @@ export default function PortalView({ token }: { token: string }) {
   const [activeTab, setActiveTab] = useState<Tab>("overview");
   const [loadingSnapshot, setLoadingSnapshot] = useState(true);
   const [loadingAI, setLoadingAI] = useState(false);
+  const [aiError, setAiError] = useState<string | null>(null);
   const [loadingControls, setLoadingControls] = useState(false);
   const [loadingTasks, setLoadingTasks] = useState(false);
   const [loadingRisks, setLoadingRisks] = useState(false);
+  const [testsLoaded, setTestsLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // Load snapshot on mount
@@ -59,13 +63,14 @@ export default function PortalView({ token }: { token: string }) {
   useEffect(() => {
     if (!snapshot) return;
     setLoadingAI(true);
+    setAiError(null);
     fetch(`/api/portal/${token}/ai-priorities`)
       .then((r) => r.json())
       .then((data: AIPrioritiesResult & { error?: string }) => {
-        if (data.error) console.warn("AI priorities error:", data.error);
+        if (data.error) setAiError(data.error);
         else setPriorities(data);
       })
-      .catch(console.error)
+      .catch((e: unknown) => setAiError(e instanceof Error ? e.message : String(e)))
       .finally(() => setLoadingAI(false));
   }, [snapshot, token]);
 
@@ -104,16 +109,19 @@ export default function PortalView({ token }: { token: string }) {
     if (tab === "controls") loadControls();
     if (tab === "tasks") loadTasks();
     if (tab === "risks") loadRisks();
+    if (tab === "tests") setTestsLoaded(true);
   }
 
   function refreshAI() {
     setLoadingAI(true);
+    setAiError(null);
     fetch(`/api/portal/${token}/ai-priorities?refresh=true`)
       .then((r) => r.json())
       .then((data: AIPrioritiesResult & { error?: string }) => {
-        if (!data.error) setPriorities(data);
+        if (data.error) setAiError(data.error);
+        else setPriorities(data);
       })
-      .catch(console.error)
+      .catch((e: unknown) => setAiError(e instanceof Error ? e.message : String(e)))
       .finally(() => setLoadingAI(false));
   }
 
@@ -180,9 +188,9 @@ export default function PortalView({ token }: { token: string }) {
 
       <div className="max-w-6xl mx-auto px-4 sm:px-6 py-8">
         {/* Score + stats strip */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8">
           {/* Score ring */}
-          <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6 flex items-center gap-4 md:col-span-1">
+          <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6 flex items-center gap-4 col-span-2 md:col-span-1">
             <ScoreRing score={snapshot.overallScore} rag={rag} />
             <div>
               <div className="text-2xl font-bold text-slate-800">{snapshot.overallScore}%</div>
@@ -210,6 +218,13 @@ export default function PortalView({ token }: { token: string }) {
             sub={`${snapshot.openCriticalRisks} critical · ${snapshot.openHighRisks} high`}
             color={snapshot.openCriticalRisks > 0 ? "text-rose-600" : snapshot.openHighRisks > 0 ? "text-amber-600" : "text-emerald-600"}
           />
+          <StatCard
+            label="Monitoring Tests"
+            value={snapshot.testPassRate}
+            sub={`${snapshot.failingTestsCount} failing · ${snapshot.inactiveTestsCount} inactive`}
+            color={snapshot.testPassRate >= 90 ? "text-emerald-600" : snapshot.testPassRate >= 70 ? "text-amber-600" : "text-rose-600"}
+            suffix="%"
+          />
         </div>
 
         {/* Framework health */}
@@ -223,18 +238,21 @@ export default function PortalView({ token }: { token: string }) {
         {/* Tabs */}
         <div className="bg-white rounded-2xl border border-slate-100 shadow-sm">
           <div className="border-b border-slate-100 px-6">
-            <nav className="flex gap-1 -mb-px">
-              {(["overview", "controls", "tasks", "risks"] as Tab[]).map((tab) => (
+            <nav className="flex gap-1 -mb-px overflow-x-auto">
+              {(["overview", "controls", "tasks", "risks", "tests", "report"] as Tab[]).map((tab) => (
                 <button
                   key={tab}
                   onClick={() => switchTab(tab)}
-                  className={`px-4 py-3.5 text-sm font-medium border-b-2 transition-colors capitalize ${
+                  className={`px-4 py-3.5 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
                     activeTab === tab
                       ? "border-brand-600 text-brand-600"
                       : "border-transparent text-slate-500 hover:text-slate-700"
                   }`}
                 >
-                  {tab === "overview" ? "AI Priorities" : tab}
+                  {tab === "overview" ? "✨ AI Priorities" :
+                   tab === "tests"    ? "🔬 Monitoring Tests" :
+                   tab === "report"   ? "📊 Reports" :
+                   tab.charAt(0).toUpperCase() + tab.slice(1)}
                 </button>
               ))}
             </nav>
@@ -245,6 +263,7 @@ export default function PortalView({ token }: { token: string }) {
               <AIPriorities
                 priorities={priorities}
                 loading={loadingAI}
+                error={aiError}
                 onRefresh={refreshAI}
               />
             )}
@@ -256,6 +275,12 @@ export default function PortalView({ token }: { token: string }) {
             )}
             {activeTab === "risks" && (
               <RisksPanel risks={risks} loading={loadingRisks} />
+            )}
+            {activeTab === "tests" && testsLoaded && (
+              <MonitoringTestsPanel token={token} />
+            )}
+            {activeTab === "report" && (
+              <ExecutiveReport snapshot={snapshot} />
             )}
           </div>
         </div>
@@ -278,18 +303,21 @@ function StatCard({
   total,
   sub,
   color,
+  suffix,
 }: {
   label: string;
   value: number;
   total?: number;
   sub: string;
   color: string;
+  suffix?: string;
 }) {
   return (
     <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6">
       <div className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">{label}</div>
       <div className={`text-3xl font-bold ${color} mb-1`}>
         {value}
+        {suffix && <span className="text-xl">{suffix}</span>}
         {total !== undefined && (
           <span className="text-lg font-medium text-slate-400">/{total}</span>
         )}

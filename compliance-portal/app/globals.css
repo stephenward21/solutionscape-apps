@@ -11,3 +11,19 @@
     @apply bg-slate-50 text-slate-900 antialiased;
   }
 }
+
+@media print {
+  /* Hide nav, header, footer when printing the report */
+  header,
+  nav,
+  footer,
+  .print\:hidden {
+    display: none !important;
+  }
+  body {
+    background: white !important;
+  }
+  .print\:break-inside-avoid {
+    break-inside: avoid;
+  }
+}

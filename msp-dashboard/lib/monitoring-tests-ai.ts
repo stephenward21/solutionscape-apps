@@ -52,12 +52,18 @@ function buildPrompt(
   workspaceName: string,
   tests: DrataMonitoringTest[]
 ): string {
+  const inactive = tests.filter(
+    (t) => t.checkStatus === "DISABLED" || t.checkStatus === "UNUSED" ||
+           t.checkStatus === "NEW"      || t.checkStatus === "TESTING"
+  ).length;
+  // Only surface truly enabled tests that are failing/erroring — stale
+  // checkResultStatus values on DISABLED/UNUSED tests should not be included.
   const failing = tests.filter(
-    (t) => t.checkResultStatus === "FAILED" || t.checkResultStatus === "ERROR"
+    (t) => t.checkStatus === "ENABLED" &&
+           (t.checkResultStatus === "FAILED" || t.checkResultStatus === "ERROR")
   );
-  const passing  = tests.filter((t) => t.checkResultStatus === "PASSED").length;
-  const disabled = tests.filter(
-    (t) => t.checkStatus === "DISABLED" || t.checkStatus === "UNUSED"
+  const passing  = tests.filter(
+    (t) => t.checkStatus === "ENABLED" && t.checkResultStatus === "PASSED"
   ).length;
 
   const testLines = failing.map((t) => {
@@ -84,9 +90,9 @@ function buildPrompt(
 
 OVERALL PICTURE
 - Total tests: ${tests.length}
-- Passing: ${passing}
-- Failing / Error: ${failing.length}
-- Disabled / Unused: ${disabled}
+- Enabled & passing: ${passing}
+- Enabled & failing / error: ${failing.length}
+- Inactive (disabled / unused / new / testing): ${inactive}
 
 FAILING / ERROR TESTS (all ${failing.length}):
 ${testLines.length === 0 ? "None — all tests passing." : testLines.join("\n\n")}
@@ -133,15 +139,20 @@ export async function getTestsAISummary(
 
   const client = new Anthropic({ apiKey: anthropicKey });
 
-  const failingCount = tests.filter((t) => t.checkResultStatus === "FAILED").length;
-  const errorCount   = tests.filter((t) => t.checkResultStatus === "ERROR").length;
+  const failingCount = tests.filter(
+    (t) => t.checkStatus === "ENABLED" && t.checkResultStatus === "FAILED"
+  ).length;
+  const errorCount = tests.filter(
+    (t) => t.checkStatus === "ENABLED" && t.checkResultStatus === "ERROR"
+  ).length;
+  const enabledCount = tests.filter((t) => t.checkStatus === "ENABLED").length;
 
   // If nothing is failing, return a healthy summary without calling Claude
   if (failingCount === 0 && errorCount === 0) {
     const healthy: TestsAISummaryResult = {
       generatedAt: new Date().toISOString(),
       workspaceId,
-      overallHealthSummary: `All ${tests.length} enabled monitoring tests are passing for ${workspaceName}. No immediate remediation required.`,
+      overallHealthSummary: `All ${enabledCount} enabled monitoring tests are passing for ${workspaceName}. No immediate remediation required.`,
       failingCount: 0,
       errorCount: 0,
       priorityItems: [],

@@ -222,7 +222,7 @@ export async function getAIPriorities(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const message = await (client.messages.create as (params: any) => Promise<Anthropic.Message>)({
     model: "claude-opus-4-7",
-    max_tokens: 4096,
+    max_tokens: 16000,
     thinking: { type: "adaptive" },
     messages: [{ role: "user", content: buildPrompt(input) }],
   });

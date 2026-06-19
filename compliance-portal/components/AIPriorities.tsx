@@ -28,10 +28,12 @@ function PriorityBadge({ priority }: { priority: Priority }) {
 export default function AIPriorities({
   priorities,
   loading,
+  error,
   onRefresh,
 }: {
   priorities: AIPrioritiesResult | null;
   loading: boolean;
+  error?: string | null;
   onRefresh: () => void;
 }) {
   if (loading) {
@@ -44,11 +46,21 @@ export default function AIPriorities({
     );
   }
 
-  if (!priorities) {
+  if (error || !priorities) {
     return (
       <div className="py-12 text-center">
-        <p className="text-slate-400 text-sm">AI priorities unavailable — check ANTHROPIC_API_KEY</p>
-        <button onClick={onRefresh} className="mt-3 text-brand-600 hover:text-brand-700 text-sm font-medium">
+        <div className="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center mx-auto mb-3">
+          <svg className="w-5 h-5 text-amber-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+        </div>
+        <p className="text-slate-600 text-sm font-medium mb-1">AI analysis unavailable</p>
+        {error && (
+          <p className="text-rose-500 text-xs max-w-md mx-auto mb-3 bg-rose-50 border border-rose-200 rounded-lg px-3 py-2">
+            {error}
+          </p>
+        )}
+        <button onClick={onRefresh} className="mt-1 text-brand-600 hover:text-brand-700 text-sm font-medium">
           Retry
         </button>
       </div>

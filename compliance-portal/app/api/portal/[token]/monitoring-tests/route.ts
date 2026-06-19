@@ -1,10 +1,10 @@
 /**
- * GET /api/client/[workspace]/monitoring-tests
- * Returns the full list of monitoring tests for a workspace plus aggregate counts.
+ * GET /api/portal/[token]/monitoring-tests
+ * Returns all monitoring tests + aggregate counts for the portal workspace.
  */
 import { NextResponse } from "next/server";
-import { getClientForKey } from "@/lib/drata-client";
-import { getWorkspaceEntry } from "@/lib/workspace-cache";
+import { getValidPortal } from "@/lib/portal-store";
+import { makeClient } from "@/lib/drata-client";
 import type { DrataMonitoringTest } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -14,38 +14,27 @@ const INACTIVE_STATUSES = new Set(["DISABLED", "UNUSED", "NEW", "TESTING"]);
 function summarize(tests: DrataMonitoringTest[]) {
   const total    = tests.length;
   const inactive = tests.filter((t) => t.checkStatus && INACTIVE_STATUSES.has(t.checkStatus)).length;
-  const disabled = tests.filter(
-    (t) => t.checkStatus === "DISABLED" || t.checkStatus === "UNUSED"
-  ).length;
   const enabled  = tests.filter((t) => t.checkStatus === "ENABLED").length;
-
-  // Only count result statuses on tests that are actually enabled/running
   const passing  = tests.filter((t) => t.checkStatus === "ENABLED" && t.checkResultStatus === "PASSED").length;
   const failing  = tests.filter((t) => t.checkStatus === "ENABLED" && t.checkResultStatus === "FAILED").length;
   const error    = tests.filter((t) => t.checkStatus === "ENABLED" && t.checkResultStatus === "ERROR").length;
   const preaudit = tests.filter((t) => t.checkStatus === "ENABLED" && t.checkResultStatus === "PREAUDIT").length;
-
   const passRate = enabled > 0 ? Math.round((passing / enabled) * 100) : 0;
-  return { total, passing, failing, error, preaudit, disabled, inactive, enabled, passRate };
+  return { total, inactive, enabled, passing, failing, error, preaudit, passRate };
 }
 
 export async function GET(
   _req: Request,
-  { params }: { params: { workspace: string } }
+  { params }: { params: { token: string } }
 ): Promise<NextResponse> {
-  const workspaceId = parseInt(params.workspace, 10);
-  if (isNaN(workspaceId)) {
-    return NextResponse.json({ error: "Invalid workspace ID" }, { status: 400 });
+  const config = getValidPortal(params.token);
+  if (!config) {
+    return NextResponse.json({ error: "Portal not found or expired" }, { status: 404 });
   }
 
   try {
-    const entry = await getWorkspaceEntry(workspaceId);
-    if (!entry) {
-      return NextResponse.json({ error: `Workspace ${workspaceId} not found` }, { status: 404 });
-    }
-
-    const client = getClientForKey(entry.apiKey);
-    const tests = await client.getMonitoringTests(workspaceId);
+    const client = makeClient(config.apiKey);
+    const tests = await client.getMonitoringTests(config.workspaceId);
     return NextResponse.json({ tests, counts: summarize(tests) });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);

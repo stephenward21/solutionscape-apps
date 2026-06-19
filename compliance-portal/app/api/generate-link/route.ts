@@ -55,13 +55,14 @@ export async function POST(req: Request): Promise<NextResponse> {
       if (!workspaces.length) {
         return NextResponse.json({ error: "No workspaces found for this API key" }, { status: 400 });
       }
-      // If workspaceName given, find matching; otherwise take first
+      // If workspaceName given, find matching; otherwise prefer primary workspace
+      const primaryWorkspace = workspaces.find((w) => w.primary);
       const match = body.workspaceName
         ? workspaces.find((w) =>
             w.name.toLowerCase().includes(body.workspaceName!.toLowerCase())
           )
-        : workspaces[0];
-      const chosen = match ?? workspaces[0];
+        : (primaryWorkspace ?? workspaces[0]);
+      const chosen = match ?? primaryWorkspace ?? workspaces[0];
       if (!chosen) {
         return NextResponse.json({ error: "Could not resolve workspace" }, { status: 400 });
       }
