@@ -33,7 +33,8 @@ export async function POST(_req: Request): Promise<NextResponse> {
  * Core report generation — called once policy and user data are available.
  * Exported so it can be called from a stateful implementation (e.g. with DB session).
  */
-export async function generateGovernanceReport(params: {
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+async function generateGovernanceReport(params: {
   apiKey: string;
   organizationName?: string;
   policyId?: string;
