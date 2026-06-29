@@ -59,6 +59,10 @@ export interface DetectedAITool {
   oauthScopes?: string[];     // what permissions the tool requested
   systemsAccessed?: string[]; // e.g. ["Google Drive", "Gmail", "GitHub"]
   detectionMethod: "oauth" | "saml" | "audit-log" | "manual";
+  // false when the app name didn't match our known AI-tool signature list —
+  // it's a real OAuth grant, just not yet identified as a specific product.
+  // Surfaced for review instead of being silently dropped.
+  recognized?: boolean;
 }
 
 // ─── Compliance / breach analysis ────────────────────────────────────────────
@@ -75,6 +79,7 @@ export interface UserComplianceRecord {
   conditionalTools: BreachDetail[];
   approvedTools: DetectedAITool[];
   riskScore: number;  // 0–100
+  needsReview?: { tool: string; reason: string }[]; // unrecognized apps Claude couldn't confidently classify
 }
 
 export interface BreachDetail {
@@ -102,6 +107,7 @@ export interface GovernanceReport {
 
   totalAIToolsDetected: number;
   prohibitedToolsInUse: string[];   // tool names actively being used in breach
+  toolsNeedingReview: number;       // unrecognized apps flagged across all users for manual review
   topRiskUsers: UserComplianceRecord[];
 
   aiNarrative: string;              // Claude executive summary

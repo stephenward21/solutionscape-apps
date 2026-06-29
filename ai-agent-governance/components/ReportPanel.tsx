@@ -139,6 +139,20 @@ export default function ReportPanel({ policyResult, idpUsers }: ReportPanelProps
         <StatBox label="Conditional"   value={report.conditionalUsers} color="text-amber-600"  bg="bg-amber-50" />
       </div>
 
+      {/* Unrecognized apps flagged for manual review */}
+      {report.toolsNeedingReview > 0 && (
+        <div className="bg-violet-50 border border-violet-200 rounded-xl p-4">
+          <p className="text-xs font-semibold text-violet-700 uppercase tracking-wide mb-1">
+            {report.toolsNeedingReview} App{report.toolsNeedingReview === 1 ? "" : "s"} Need Manual Review
+          </p>
+          <p className="text-xs text-violet-700">
+            These OAuth grants didn&apos;t match our known AI-tool list and Claude couldn&apos;t confidently
+            classify them as AI or non-AI. Expand a user below to see details — this is how new/unlisted
+            tools (e.g. a tool not yet in our signatures) get surfaced instead of silently dropped.
+          </p>
+        </div>
+      )}
+
       {/* Prohibited tools in active use */}
       {report.prohibitedToolsInUse.length > 0 && (
         <div className="bg-rose-50 border border-rose-200 rounded-xl p-4">
@@ -307,6 +321,18 @@ function UserRecord({ user }: { user: UserComplianceRecord }) {
                   </span>
                 ))}
               </div>
+            </div>
+          )}
+
+          {user.needsReview && user.needsReview.length > 0 && (
+            <div>
+              <p className="text-xs font-semibold text-violet-700 mb-2">Needs Manual Review</p>
+              {user.needsReview.map((t, i) => (
+                <div key={i} className="bg-violet-50 border border-violet-100 rounded-lg p-3 mb-2">
+                  <p className="text-sm font-semibold text-slate-800">{t.tool}</p>
+                  <p className="text-xs text-violet-700 mt-0.5">{t.reason}</p>
+                </div>
+              ))}
             </div>
           )}
         </div>

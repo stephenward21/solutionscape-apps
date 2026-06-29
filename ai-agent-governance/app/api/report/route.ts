@@ -86,24 +86,30 @@ ${params.policyToolDetails.map((t) => `  ${t.status}: ${t.tool} (${t.vendor})${t
 ` : "NOTE: No policy rules provided. Classify all detected tools as UNKNOWN status — the organization has no policy to compare against."}
 
 ${hasUsers ? `
-USERS AND THEIR DETECTED AI TOOLS:
+USERS AND THEIR DETECTED OAUTH GRANTS:
 ${params.users.map((u) =>
   `- ${u.email} (${u.displayName ?? ""}${u.department ? `, ${u.department}` : ""}):
-    ${u.aiToolsDetected.length === 0 ? "No AI tools detected" : u.aiToolsDetected.map((t) =>
-      `${t.tool} by ${t.vendor}` +
+    ${u.aiToolsDetected.length === 0 ? "No OAuth grants detected" : u.aiToolsDetected.map((t) =>
+      `${t.tool} by ${t.vendor}${t.recognized === false ? " [UNRECOGNIZED — not in our known-AI-tool list, app name as reported by Google]" : ""}` +
       (t.oauthScopes?.length ? ` [scopes: ${t.oauthScopes.slice(0, 5).join(", ")}]` : "") +
       (t.systemsAccessed?.length ? ` [systems: ${t.systemsAccessed.join(", ")}]` : "") +
       (t.signInCount ? ` [${t.signInCount} sign-ins]` : "")
     ).join("; ")}`
 ).join("\n")}
+
+IMPORTANT — entries marked [UNRECOGNIZED] did not match our hardcoded signature list of known AI products, which only covers products known at the time this code was written. A static list will always lag new AI tools (e.g. "Manus" was missed this way before being added). For each UNRECOGNIZED entry, use your own knowledge to judge whether the named app is an AI tool/agent (LLM chat, AI coding agent, image/video/audio generation, AI browser/task agent, etc.):
+- If you recognize it as an AI tool, classify and treat it exactly like a known tool above — compare it against the policy rules below by name/vendor/category as best you can infer.
+- If you recognize it as clearly NOT an AI tool (e.g. Zoom, Slack, Dropbox, Salesforce core, standard calendar/email/storage SaaS), exclude it from AI compliance scoring entirely — do not flag it as a breach or list it as a detected AI tool.
+- If you cannot tell, list it in that user's "needsReview" array (see output schema) instead of guessing into a breach/compliant bucket.
 ` : "NOTE: No user directory data provided. Generate an executive summary based on the policy analysis only."}
 
 For each user, determine:
-1. complianceStatus: COMPLIANT (only approved tools in use, or no tools detected) | BREACH (using prohibited tools) | CONDITIONAL (using conditional tools without issues, or approved + conditional mix) | UNKNOWN (no policy or unrecognized tools)
+1. complianceStatus: COMPLIANT (only approved tools in use, or no AI tools detected) | BREACH (using prohibited tools) | CONDITIONAL (using conditional tools without issues, or approved + conditional mix) | UNKNOWN (no policy, or detected AI tools that aren't covered by any policy rule)
 2. Which specific tools are breaching policy and exactly why
 3. What systems those tools can access (from the scopes/systems data)
 4. Risk score 0–100: 0 = no risk (compliant), 30–50 = minor (only conditional tools), 60–80 = significant (1–2 prohibited tools with limited access), 80–100 = critical (prohibited tools with broad system access like Gmail, Drive, Calendar)
 5. Specific, actionable remediation recommendation per breach
+6. needsReview: any UNRECOGNIZED app you could not confidently classify as AI or non-AI — name it and say why a human should check it
 
 Also identify which prohibited tools are being actively used across the org.
 
@@ -121,7 +127,8 @@ Return ONLY valid JSON (no markdown fences):
       "riskScore": 0,
       "breachingTools": [],
       "conditionalTools": [],
-      "approvedTools": [{ "tool": "...", "vendor": "...", "detectionMethod": "oauth" }]
+      "approvedTools": [{ "tool": "...", "vendor": "...", "detectionMethod": "oauth" }],
+      "needsReview": [{ "tool": "<unrecognized app name>", "reason": "<why you couldn't classify it confidently>" }]
     }
   ]
 }`;
@@ -175,6 +182,7 @@ Return ONLY valid JSON (no markdown fences):
       0
     ),
     prohibitedToolsInUse: parsed.prohibitedToolsInUse ?? [],
+    toolsNeedingReview: records.reduce((s, u) => s + (u.needsReview?.length ?? 0), 0),
     topRiskUsers: [...records].sort((a, b) => b.riskScore - a.riskScore).slice(0, 5),
     aiNarrative: parsed.aiNarrative ?? "",
     userRecords: records,

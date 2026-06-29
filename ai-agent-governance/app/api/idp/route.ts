@@ -44,6 +44,31 @@ const AI_TOOL_SIGNATURES: Array<{
   { patterns: ["character.ai"],                      tool: "Character.AI",   vendor: "Character Technologies", categories: ["llm", "chat"] },
   { patterns: ["gemini", "bard"],                    tool: "Gemini",         vendor: "Google",        categories: ["llm", "chat"] },
   { patterns: ["copilot365", "microsoft 365 copilot"], tool: "Microsoft 365 Copilot", vendor: "Microsoft", categories: ["llm", "productivity"] },
+  { patterns: ["manus"],                             tool: "Manus",          vendor: "Butterfly Effect", categories: ["agent", "autonomous-task"] },
+  { patterns: ["devin"],                             tool: "Devin",          vendor: "Cognition Labs", categories: ["agent", "code-generation"] },
+  { patterns: ["replit"],                            tool: "Replit Agent",   vendor: "Replit",        categories: ["agent", "code-generation"] },
+  { patterns: ["lovable"],                           tool: "Lovable",        vendor: "Lovable",       categories: ["agent", "code-generation"] },
+  { patterns: ["v0.dev", "v0 by vercel"],             tool: "v0",             vendor: "Vercel",        categories: ["agent", "code-generation"] },
+  { patterns: ["genspark"],                           tool: "Genspark",       vendor: "Genspark",      categories: ["agent", "search"] },
+  { patterns: ["adept ai", "adept.ai"],               tool: "Adept",          vendor: "Adept",         categories: ["agent", "autonomous-task"] },
+  { patterns: ["browser use", "browser-use"],         tool: "Browser Use",    vendor: "Browser Use",   categories: ["agent", "browser-automation"] },
+  { patterns: ["poe.com", "poe"],                     tool: "Poe",            vendor: "Quora",         categories: ["llm", "chat"] },
+  { patterns: ["you.com"],                            tool: "You.com",        vendor: "You.com",       categories: ["search", "llm"] },
+  { patterns: ["deepseek"],                           tool: "DeepSeek",       vendor: "DeepSeek",      categories: ["llm", "chat"] },
+  { patterns: ["mistral"],                            tool: "Mistral",        vendor: "Mistral AI",    categories: ["llm", "chat"] },
+  { patterns: ["huggingface", "hugging face"],        tool: "HuggingChat",    vendor: "Hugging Face",  categories: ["llm", "chat"] },
+  { patterns: ["glean"],                              tool: "Glean",          vendor: "Glean",         categories: ["search", "llm"] },
+  { patterns: ["harvey"],                             tool: "Harvey",         vendor: "Harvey AI",     categories: ["llm", "legal"] },
+  { patterns: ["sourcegraph cody", "cody"],           tool: "Cody",           vendor: "Sourcegraph",   categories: ["code-generation"] },
+  { patterns: ["tabnine"],                            tool: "Tabnine",        vendor: "Tabnine",       categories: ["code-generation"] },
+  { patterns: ["codeium", "windsurf"],                tool: "Windsurf",       vendor: "Codeium",       categories: ["code-generation"] },
+  { patterns: ["suno"],                               tool: "Suno",           vendor: "Suno",          categories: ["audio-generation"] },
+  { patterns: ["pika.art", "pika labs"],               tool: "Pika",           vendor: "Pika Labs",     categories: ["video-generation"] },
+  { patterns: ["luma ai", "luma labs"],               tool: "Luma AI",        vendor: "Luma Labs",     categories: ["video-generation"] },
+  { patterns: ["ideogram"],                           tool: "Ideogram",       vendor: "Ideogram",      categories: ["image-generation"] },
+  { patterns: ["leonardo.ai", "leonardo ai"],          tool: "Leonardo.Ai",    vendor: "Leonardo.Ai",   categories: ["image-generation"] },
+  { patterns: ["firefly"],                            tool: "Adobe Firefly",  vendor: "Adobe",         categories: ["image-generation"] },
+  { patterns: ["agentforce"],                         tool: "Agentforce",     vendor: "Salesforce",    categories: ["agent", "crm"] },
 ];
 
 function matchAITool(appName: string): { tool: string; vendor: string; categories: string[] } | null {
@@ -237,8 +262,17 @@ async function connectGoogle(creds: { serviceAccountJson: string; adminEmail: st
           const appName = param("app_name") ?? "";
           if (!appName) continue;
 
-          const match = matchAITool(appName);
-          if (!match) continue;
+          // Tools not in AI_TOOL_SIGNATURES are NOT dropped — a hardcoded
+          // allow-list will always lag new AI products (e.g. Manus wasn't
+          // recognized until it was added here). Unmatched grants are kept
+          // and marked recognized: false so they surface in the report for
+          // manual/Claude-assisted review instead of disappearing silently.
+          const match = matchAITool(appName) ?? {
+            tool: appName,
+            vendor: "Unknown",
+            categories: ["unclassified"],
+          };
+          const recognized = matchAITool(appName) !== null;
 
           const scopes = paramMulti("scope");
           const eventName = event.name ?? "";
@@ -265,6 +299,7 @@ async function connectGoogle(creds: { serviceAccountJson: string; adminEmail: st
               oauthScopes: scopes,
               systemsAccessed,
               detectionMethod: "oauth",
+              recognized,
               revoked: eventName === "revoke",
             });
           }
