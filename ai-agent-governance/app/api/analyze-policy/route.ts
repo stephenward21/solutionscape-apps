@@ -124,14 +124,28 @@ export async function POST(req: Request): Promise<NextResponse> {
 
   const client = new Anthropic({ apiKey });
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const callClaude = (params: any) =>
+    (client.messages.create as (p: any) => Promise<Anthropic.Message>)(params);
+
   try {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const message = await (client.messages.create as (p: any) => Promise<Anthropic.Message>)({
+    const baseParams = {
       model: "claude-opus-4-7",
       max_tokens: 16000,
       thinking: { type: "adaptive" },
       messages: [{ role: "user", content: buildPrompt(policyText, file.name) }],
-    });
+    };
+
+    let message: Anthropic.Message;
+    try {
+      message = await callClaude(baseParams);
+    } catch (firstErr) {
+      // Retry without thinking on Anthropic 5xx — large inputs with adaptive thinking
+      // can trigger internal server errors; standard mode handles the same task fine.
+      const isServerError = firstErr instanceof Anthropic.InternalServerError;
+      if (!isServerError) throw firstErr;
+      message = await callClaude({ ...baseParams, thinking: undefined });
+    }
 
     const textBlock = message.content.find((b) => b.type === "text");
     if (!textBlock || textBlock.type !== "text") {

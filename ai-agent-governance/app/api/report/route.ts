@@ -127,12 +127,24 @@ Return ONLY valid JSON (no markdown fences):
 }`;
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const message = await (client.messages.create as (p: any) => Promise<Anthropic.Message>)({
+  const callClaude = (p: any) =>
+    (client.messages.create as (p: any) => Promise<Anthropic.Message>)(p);
+
+  const baseCallParams = {
     model: "claude-opus-4-7",
     max_tokens: 16000,
     thinking: { type: "adaptive" },
     messages: [{ role: "user", content: prompt }],
-  });
+  };
+
+  let message: Anthropic.Message;
+  try {
+    message = await callClaude(baseCallParams);
+  } catch (firstErr) {
+    const isServerError = firstErr instanceof Anthropic.InternalServerError;
+    if (!isServerError) throw firstErr;
+    message = await callClaude({ ...baseCallParams, thinking: undefined });
+  }
 
   const textBlock = message.content.find((b) => b.type === "text");
   if (!textBlock || textBlock.type !== "text") throw new Error("No text response from Claude");
