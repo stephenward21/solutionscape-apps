@@ -182,9 +182,16 @@ async function connectGoogle(creds: { serviceAccountJson: string; adminEmail: st
     throw new Error(`Failed to fetch user list from Google Directory: ${msg}`);
   }
 
-  // Fetch OAuth token grants from the last 90 days
-  const startTime = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString();
-  const toolsPerUser = new Map<string, Map<string, DetectedAITool>>();
+  // Fetch OAuth token events from the last 180 days.
+  // We do NOT filter by eventName — the token application emits authorize,
+  // revoke, approve, reject events. We want all of them to accurately track
+  // which apps each user currently has active grants for.
+  const startTime = new Date(Date.now() - 180 * 24 * 60 * 60 * 1000).toISOString();
+
+  interface ToolGrant extends DetectedAITool {
+    revoked: boolean;
+  }
+  const toolsPerUser = new Map<string, Map<string, ToolGrant>>();
 
   try {
     let pageToken: string | undefined;
@@ -192,49 +199,73 @@ async function connectGoogle(creds: { serviceAccountJson: string; adminEmail: st
       const res = await reports.activities.list({
         userKey: "all",
         applicationName: "token",
-        eventName: "authorize",
+        // No eventName filter — capture authorize, revoke, approve, reject
         startTime,
         maxResults: 1000,
         pageToken,
       });
 
       for (const activity of res.data.items ?? []) {
-        const email = activity.actor?.email;
-        if (!email) continue;
+        const timestamp = activity.id?.time ?? new Date().toISOString();
 
         for (const event of activity.events ?? []) {
-          // Extract the app name from the event parameters
-          const params = event.parameters ?? [];
-          const appNameParam = params.find((p) => p.name === "app_name" || p.name === "client_id");
-          const scopesParam  = params.find((p) => p.name === "scope");
-          const appName = appNameParam?.value ?? "";
-          const scopes  = scopesParam?.multiValue ?? (scopesParam?.value ? [scopesParam.value] : []);
+          const rawParams = event.parameters ?? [];
+
+          // Helper functions for extracting event parameters
+          const param = (name: string): string | null => {
+            const p = rawParams.find((x) => x.name === name);
+            return p?.value ?? p?.multiValue?.[0] ?? null;
+          };
+          const paramMulti = (name: string): string[] => {
+            const p = rawParams.find((x) => x.name === name);
+            if (p?.multiValue?.length) return p.multiValue as string[];
+            return p?.value ? [p.value] : [];
+          };
+
+          // "User" column in Admin Console OAuth log = resource_owner parameter.
+          // actor.email is whoever performed the action — could be an admin for
+          // delegated actions. Always prefer resource_owner for the affected user.
+          const userEmail =
+            param("resource_owner") ??
+            activity.actor?.email ??
+            null;
+          if (!userEmail) continue;
+
+          // app_name is the human-readable name shown in the "Application Name"
+          // column in the Admin Console. client_id is an opaque OAuth ID string
+          // and should NOT be used for name matching.
+          const appName = param("app_name") ?? "";
+          if (!appName) continue;
 
           const match = matchAITool(appName);
           if (!match) continue;
 
-          const timestamp = activity.id?.time ?? new Date().toISOString();
+          const scopes = paramMulti("scope");
+          const eventName = event.name ?? "";
 
-          if (!toolsPerUser.has(email)) toolsPerUser.set(email, new Map());
-          const userTools = toolsPerUser.get(email)!;
+          if (!toolsPerUser.has(userEmail)) toolsPerUser.set(userEmail, new Map());
+          const userTools = toolsPerUser.get(userEmail)!;
 
           if (userTools.has(match.tool)) {
             const existing = userTools.get(match.tool)!;
             existing.signInCount = (existing.signInCount ?? 0) + 1;
             if (timestamp > (existing.lastSeenAt ?? "")) existing.lastSeenAt = timestamp;
             if (timestamp < (existing.firstSeenAt ?? timestamp)) existing.firstSeenAt = timestamp;
+            // Track revocation state: revoke cancels, authorize/approve re-activates
+            if (eventName === "revoke") existing.revoked = true;
+            if (eventName === "authorize" || eventName === "approve") existing.revoked = false;
           } else {
-            // Infer which Google systems the tool can access from its scopes
-            const systemsAccessed = inferSystemsFromScopes(scopes as string[]);
+            const systemsAccessed = inferSystemsFromScopes(scopes);
             userTools.set(match.tool, {
               tool: match.tool,
               vendor: match.vendor,
               firstSeenAt: timestamp,
               lastSeenAt: timestamp,
               signInCount: 1,
-              oauthScopes: scopes as string[],
+              oauthScopes: scopes,
               systemsAccessed,
               detectionMethod: "oauth",
+              revoked: eventName === "revoke",
             });
           }
         }
@@ -247,19 +278,22 @@ async function connectGoogle(creds: { serviceAccountJson: string; adminEmail: st
     throw new Error(`Failed to fetch OAuth activity from Google Reports: ${msg}`);
   }
 
-  // Assemble UserActivity array
+  // Assemble UserActivity array — exclude tools where the most recent event
+  // was a revoke (the user has since removed the app's access)
   const results: UserActivity[] = [];
   for (const [email, tools] of toolsPerUser) {
+    const activeTools = Array.from(tools.values()).filter((t) => !t.revoked);
+    if (activeTools.length === 0) continue;
+
     const userInfo = userMap.get(email) ?? { displayName: email };
+    const timestamps = activeTools.map((t) => new Date(t.lastSeenAt ?? 0).getTime());
     results.push({
       userId: email,
       email,
       displayName: userInfo.displayName,
       department: userInfo.department,
-      aiToolsDetected: Array.from(tools.values()),
-      lastActivityAt: Math.max(...Array.from(tools.values()).map((t) => new Date(t.lastSeenAt ?? 0).getTime()))
-        ? new Date(Math.max(...Array.from(tools.values()).map((t) => new Date(t.lastSeenAt ?? 0).getTime()))).toISOString()
-        : undefined,
+      aiToolsDetected: activeTools.map(({ revoked: _revoked, ...rest }) => rest),
+      lastActivityAt: new Date(Math.max(...timestamps)).toISOString(),
     });
   }
 
