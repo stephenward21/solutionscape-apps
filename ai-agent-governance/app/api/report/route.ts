@@ -127,7 +127,7 @@ Set isAITool to false if it is clearly a non-AI SaaS tool. Set confidence to LOW
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const callClaude = (msgs: Anthropic.MessageParam[]) =>
     (client.messages.create as (p: any) => Promise<Anthropic.Message>)({
-      model: "claude-haiku-4-5-20251001",
+      model: "claude-sonnet-4-6",
       max_tokens: 4000,
       tools,
       messages: msgs,
