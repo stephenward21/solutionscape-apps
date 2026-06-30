@@ -35,6 +35,23 @@ export async function POST(req: Request): Promise<NextResponse> {
     );
   }
 
+  // Collect unique unrecognized app names across all users for web lookup
+  const unrecognizedNames = new Set<string>();
+  for (const user of users) {
+    for (const tool of user.aiToolsDetected) {
+      if (tool.recognized === false) unrecognizedNames.add(tool.tool);
+    }
+  }
+
+  // Web-search classify any unrecognized apps before the main report call.
+  // This way the report prompt gets clean AI/non-AI verdicts rather than
+  // asking Claude to guess from the app name alone.
+  const client = new Anthropic({ apiKey });
+  const webClassifications = await classifyUnrecognizedAppsViaWeb(
+    client,
+    Array.from(unrecognizedNames)
+  );
+
   try {
     const report = await generateGovernanceReport({
       apiKey,
@@ -49,11 +66,103 @@ export async function POST(req: Request): Promise<NextResponse> {
         ...(policyResult?.approvedTools    ?? []).map((t) => ({ ...t, status: "APPROVED"    as const })),
       ],
       users,
+      webClassifications,
     });
     return NextResponse.json(report);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     return NextResponse.json({ error: message }, { status: 500 });
+  }
+}
+
+interface WebClassification {
+  isAITool: boolean | null; // null = uncertain
+  confidence: "HIGH" | "MEDIUM" | "LOW";
+  evidence: string;
+}
+
+// Uses Claude Haiku + Anthropic's built-in web_search tool to look up each
+// unrecognized app name and determine whether the site description references
+// AI. Runs before the main report generation so verdicts can be embedded in
+// the governance prompt as ground-truth rather than relying on Claude's guess.
+async function classifyUnrecognizedAppsViaWeb(
+  client: Anthropic,
+  appNames: string[]
+): Promise<Map<string, WebClassification>> {
+  if (appNames.length === 0) return new Map();
+
+  const prompt = `For each app name below, search the web for the app's homepage or official description and determine whether it is an AI tool (LLM, AI chatbot, AI coding assistant, image/video/audio generation, autonomous AI agent, AI-powered search, AI automation, etc.).
+
+Apps to classify:
+${appNames.map((name, i) => `${i + 1}. ${name}`).join("\n")}
+
+For each app, search for "[app name] official website" or "[app name] what is it", then check the homepage description, meta description, or about page. Look for phrases like "AI", "artificial intelligence", "machine learning", "LLM", "generative", "neural", "copilot", "agent", etc.
+
+Return ONLY valid JSON (no markdown):
+{
+  "classifications": [
+    {
+      "appName": "<exact name from input list>",
+      "isAITool": true,
+      "confidence": "HIGH",
+      "evidence": "<1-sentence summary of what the website says, e.g. 'Homepage describes it as an autonomous AI agent for task completion'>"
+    }
+  ]
+}
+
+Set isAITool to false if it is clearly a non-AI SaaS tool. Set confidence to LOW and isAITool to null if you genuinely cannot determine.`;
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const tools = [{ type: "web_search_20260209", name: "web_search" } as unknown as Anthropic.Tool];
+
+  let messages: Anthropic.MessageParam[] = [{ role: "user", content: prompt }];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const callClaude = (msgs: Anthropic.MessageParam[]) =>
+    (client.messages.create as (p: any) => Promise<Anthropic.Message>)({
+      model: "claude-haiku-4-5-20251001",
+      max_tokens: 4000,
+      tools,
+      messages: msgs,
+    });
+
+  let response = await callClaude(messages);
+  let iterations = 0;
+
+  // web_search is a server-side tool: stop_reason is "pause_turn", not "tool_use".
+  // Loop by appending the assistant content and re-calling until end_turn.
+  while (response.stop_reason === "pause_turn" && iterations < 8) {
+    iterations++;
+    messages = [
+      ...messages,
+      { role: "assistant", content: response.content },
+    ];
+    response = await callClaude(messages);
+  }
+
+  const textBlock = response.content.find((b) => b.type === "text");
+  if (!textBlock || textBlock.type !== "text") return new Map();
+
+  try {
+    const raw = textBlock.text.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
+    const parsed = JSON.parse(raw) as {
+      classifications: Array<{
+        appName: string;
+        isAITool: boolean | null;
+        confidence: "HIGH" | "MEDIUM" | "LOW";
+        evidence: string;
+      }>;
+    };
+    const map = new Map<string, WebClassification>();
+    for (const c of parsed.classifications ?? []) {
+      map.set(c.appName, {
+        isAITool: c.isAITool,
+        confidence: c.confidence ?? "MEDIUM",
+        evidence: c.evidence ?? "",
+      });
+    }
+    return map;
+  } catch {
+    return new Map();
   }
 }
 
@@ -66,6 +175,7 @@ async function generateGovernanceReport(params: {
   approvedTools: string[];
   policyToolDetails: Array<{ tool: string; vendor: string; status: string; conditions?: string; reasoning: string }>;
   users: UserActivity[];
+  webClassifications: Map<string, WebClassification>;
 }): Promise<GovernanceReport> {
   const client = new Anthropic({ apiKey: params.apiKey });
 
@@ -85,22 +195,32 @@ Detailed policy entries:
 ${params.policyToolDetails.map((t) => `  ${t.status}: ${t.tool} (${t.vendor})${t.conditions ? ` — Condition: ${t.conditions}` : ""} — ${t.reasoning}`).join("\n")}
 ` : "NOTE: No policy rules provided. Classify all detected tools as UNKNOWN status — the organization has no policy to compare against."}
 
+${params.webClassifications.size > 0 ? `
+WEB LOOKUP RESULTS FOR UNRECOGNIZED APPS:
+The following apps were not in our known-AI-tool signature list. Their websites were searched to determine whether they reference AI. Use these verdicts — do NOT guess or override them:
+${Array.from(params.webClassifications.entries()).map(([name, c]) =>
+  `- "${name}": ${c.isAITool ? "IS an AI tool" : c.isAITool === false ? "is NOT an AI tool" : "UNCERTAIN"} (confidence: ${c.confidence}) — ${c.evidence}`
+).join("\n")}
+
+Apps classified as NOT AI tools should be excluded entirely from compliance scoring.
+Apps classified as AI tools should be treated like known tools and compared against policy rules.
+Apps with UNCERTAIN classification should appear in that user's needsReview array.
+` : ""}
 ${hasUsers ? `
 USERS AND THEIR DETECTED OAUTH GRANTS:
 ${params.users.map((u) =>
   `- ${u.email} (${u.displayName ?? ""}${u.department ? `, ${u.department}` : ""}):
-    ${u.aiToolsDetected.length === 0 ? "No OAuth grants detected" : u.aiToolsDetected.map((t) =>
-      `${t.tool} by ${t.vendor}${t.recognized === false ? " [UNRECOGNIZED — not in our known-AI-tool list, app name as reported by Google]" : ""}` +
-      (t.oauthScopes?.length ? ` [scopes: ${t.oauthScopes.slice(0, 5).join(", ")}]` : "") +
-      (t.systemsAccessed?.length ? ` [systems: ${t.systemsAccessed.join(", ")}]` : "") +
-      (t.signInCount ? ` [${t.signInCount} sign-ins]` : "")
-    ).join("; ")}`
+    ${u.aiToolsDetected.length === 0 ? "No OAuth grants detected" : u.aiToolsDetected.map((t) => {
+      const webResult = t.recognized === false ? params.webClassifications.get(t.tool) : undefined;
+      const label = webResult
+        ? (webResult.isAITool ? " [WEB-CONFIRMED AI TOOL]" : webResult.isAITool === false ? " [WEB-CONFIRMED NON-AI — exclude]" : " [WEB-UNCERTAIN — flag for review]")
+        : (t.recognized === false ? " [UNRECOGNIZED — no web result]" : "");
+      return `${t.tool} by ${t.vendor}${label}` +
+        (t.oauthScopes?.length ? ` [scopes: ${t.oauthScopes.slice(0, 5).join(", ")}]` : "") +
+        (t.systemsAccessed?.length ? ` [systems: ${t.systemsAccessed.join(", ")}]` : "") +
+        (t.signInCount ? ` [${t.signInCount} sign-ins]` : "");
+    }).join("; ")}`
 ).join("\n")}
-
-IMPORTANT — entries marked [UNRECOGNIZED] did not match our hardcoded signature list of known AI products, which only covers products known at the time this code was written. A static list will always lag new AI tools (e.g. "Manus" was missed this way before being added). For each UNRECOGNIZED entry, use your own knowledge to judge whether the named app is an AI tool/agent (LLM chat, AI coding agent, image/video/audio generation, AI browser/task agent, etc.):
-- If you recognize it as an AI tool, classify and treat it exactly like a known tool above — compare it against the policy rules below by name/vendor/category as best you can infer.
-- If you recognize it as clearly NOT an AI tool (e.g. Zoom, Slack, Dropbox, Salesforce core, standard calendar/email/storage SaaS), exclude it from AI compliance scoring entirely — do not flag it as a breach or list it as a detected AI tool.
-- If you cannot tell, list it in that user's "needsReview" array (see output schema) instead of guessing into a breach/compliant bucket.
 ` : "NOTE: No user directory data provided. Generate an executive summary based on the policy analysis only."}
 
 For each user, determine:

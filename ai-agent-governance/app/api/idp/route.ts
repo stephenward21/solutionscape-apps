@@ -71,6 +71,25 @@ const AI_TOOL_SIGNATURES: Array<{
   { patterns: ["agentforce"],                         tool: "Agentforce",     vendor: "Salesforce",    categories: ["agent", "crm"] },
 ];
 
+// Google first-party products — skip entirely when building the unrecognized
+// bucket for a Google Workspace connector so we don't surface Google's own
+// apps as "unknown third-party grants" needing AI review.
+const GOOGLE_FIRST_PARTY_PATTERNS = [
+  "google", "gmail", "youtube", "android", "chrome", "blogger",
+  "google maps", "google drive", "google docs", "google sheets", "google slides",
+  "google calendar", "google meet", "google chat", "google forms",
+  "google classroom", "google photos", "google play", "google earth",
+  "google analytics", "google ads", "google cloud", "google pay",
+  "google workspace", "google admin", "google sites", "google vault",
+  "google keep", "google tasks", "google currents", "google jamboard",
+  "google one", "google fi", "google voice", "hangouts",
+];
+
+function isGoogleFirstParty(appName: string): boolean {
+  const lower = appName.toLowerCase();
+  return GOOGLE_FIRST_PARTY_PATTERNS.some((p) => lower.includes(p));
+}
+
 function matchAITool(appName: string): { tool: string; vendor: string; categories: string[] } | null {
   const lower = appName.toLowerCase();
   for (const sig of AI_TOOL_SIGNATURES) {
@@ -262,17 +281,19 @@ async function connectGoogle(creds: { serviceAccountJson: string; adminEmail: st
           const appName = param("app_name") ?? "";
           if (!appName) continue;
 
-          // Tools not in AI_TOOL_SIGNATURES are NOT dropped — a hardcoded
-          // allow-list will always lag new AI products (e.g. Manus wasn't
-          // recognized until it was added here). Unmatched grants are kept
-          // and marked recognized: false so they surface in the report for
-          // manual/Claude-assisted review instead of disappearing silently.
-          const match = matchAITool(appName) ?? {
+          // Google first-party apps are irrelevant for AI governance — skip them.
+          // For everything else: if not in the known-AI signature list, keep it
+          // with recognized: false so the report step can do a web lookup to
+          // determine whether the app is AI-related rather than silently dropping it.
+          const knownMatch = matchAITool(appName);
+          if (!knownMatch && isGoogleFirstParty(appName)) continue;
+
+          const match = knownMatch ?? {
             tool: appName,
             vendor: "Unknown",
             categories: ["unclassified"],
           };
-          const recognized = matchAITool(appName) !== null;
+          const recognized = knownMatch !== null;
 
           const scopes = paramMulti("scope");
           const eventName = event.name ?? "";
