@@ -35,24 +35,32 @@ export async function POST(req: Request): Promise<NextResponse> {
     );
   }
 
-  // Collect unique unrecognized app names across all users for web lookup
-  const unrecognizedNames = new Set<string>();
-  for (const user of users) {
-    for (const tool of user.aiToolsDetected) {
-      if (tool.recognized === false) unrecognizedNames.add(tool.tool);
-    }
-  }
-
-  // Web-search classify any unrecognized apps before the main report call.
-  // This way the report prompt gets clean AI/non-AI verdicts rather than
-  // asking Claude to guess from the app name alone.
-  const client = new Anthropic({ apiKey });
-  const webClassifications = await classifyUnrecognizedAppsViaWeb(
-    client,
-    Array.from(unrecognizedNames)
-  );
-
   try {
+    const client = new Anthropic({ apiKey });
+
+    // Collect unique unrecognized app names for web lookup
+    const unrecognizedNames = new Set<string>();
+    for (const user of users) {
+      for (const tool of user.aiToolsDetected) {
+        if (tool.recognized === false) unrecognizedNames.add(tool.tool);
+      }
+    }
+
+    // Web-search classification is best-effort: if it fails for any reason
+    // (API error, timeout, parse failure) the report still generates — it just
+    // won't have web-lookup verdicts for unrecognized apps.
+    let webClassifications = new Map<string, WebClassification>();
+    if (unrecognizedNames.size > 0) {
+      try {
+        webClassifications = await classifyUnrecognizedAppsViaWeb(
+          client,
+          Array.from(unrecognizedNames)
+        );
+      } catch {
+        // Non-fatal — continue without web verdicts
+      }
+    }
+
     const report = await generateGovernanceReport({
       apiKey,
       organizationName: policyResult?.organizationName,
