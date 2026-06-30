@@ -5,7 +5,12 @@ const nextConfig = {
     // webpack. Marking it as external tells Next.js to require() it at runtime
     // via Node.js instead of bundling it, which avoids the __webpack_require__.n error.
     // (Promoted to top-level serverExternalPackages in Next.js 15.)
-    serverComponentsExternalPackages: ["googleapis", "google-auth-library"],
+    serverComponentsExternalPackages: [
+      "googleapis",
+      "google-auth-library",
+      "pdf-parse",
+      "mammoth",
+    ],
   },
 };
 
