@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
+import Link from "next/link";
 import PolicyPanel from "./PolicyPanel";
 import IdPPanel from "./IdPPanel";
 import ReportPanel from "./ReportPanel";
@@ -54,15 +55,48 @@ export default function Dashboard() {
       <header className="bg-white border-b border-slate-200 sticky top-0 z-20">
         <div className="max-w-7xl mx-auto px-4 sm:px-6">
           <div className="flex items-center h-16 gap-3">
-            <div className="w-8 h-8 rounded-lg bg-brand-600 flex items-center justify-center shrink-0">
-              <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                  d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
-              </svg>
-            </div>
+            {/* SolutionScape hex logo mark */}
+            <svg width="36" height="36" viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg" className="shrink-0">
+              <defs>
+                <linearGradient id="ss-grad" x1="0" y1="0" x2="36" y2="36" gradientUnits="userSpaceOnUse">
+                  <stop offset="0%" stopColor="#2A8EC5" />
+                  <stop offset="100%" stopColor="#2EB598" />
+                </linearGradient>
+              </defs>
+              <polygon points="18,2.5 31,9.75 31,26.25 18,33.5 5,26.25 5,9.75" fill="url(#ss-grad)" />
+              {/* Node network */}
+              <circle cx="13" cy="18" r="2.2" fill="white" fillOpacity="0.92" />
+              <circle cx="22" cy="13" r="2.2" fill="white" fillOpacity="0.92" />
+              <circle cx="22" cy="23" r="2.2" fill="white" fillOpacity="0.92" />
+              <line x1="13" y1="18" x2="22" y2="13" stroke="white" strokeWidth="1.5" strokeOpacity="0.75" strokeLinecap="round" />
+              <line x1="13" y1="18" x2="22" y2="23" stroke="white" strokeWidth="1.5" strokeOpacity="0.75" strokeLinecap="round" />
+              <line x1="22" y1="13" x2="22" y2="23" stroke="white" strokeWidth="1.5" strokeOpacity="0.75" strokeLinecap="round" />
+            </svg>
             <div>
-              <div className="font-semibold text-slate-800 leading-tight">AI Agent Governance</div>
-              <div className="text-xs text-slate-400">Solutionscape</div>
+              <div className="font-bold text-slate-900 leading-tight tracking-tight">SolutionScape</div>
+              <div className="text-xs text-slate-400 font-medium">AI Agent Governance</div>
+            </div>
+
+            <div className="ml-auto flex items-center gap-1">
+              <Link
+                href="/metrics"
+                title="Metrics"
+                className="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors"
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.75}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                </svg>
+              </Link>
+              <Link
+                href="/settings"
+                title="Settings"
+                className="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors"
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.75}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                </svg>
+              </Link>
             </div>
           </div>
         </div>
@@ -78,19 +112,19 @@ export default function Dashboard() {
             onClick={() => switchMode("basic")}
             className={`text-left rounded-2xl border-2 p-5 transition-all ${
               mode === "basic"
-                ? "border-violet-500 bg-violet-50 shadow-sm"
+                ? "border-teal-500 bg-teal-50 shadow-sm"
                 : "border-slate-200 bg-white hover:border-slate-300 hover:shadow-sm"
             }`}
           >
             <div className="flex items-start gap-3">
               <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 text-xl ${
-                mode === "basic" ? "bg-violet-100" : "bg-slate-100"
+                mode === "basic" ? "bg-teal-100" : "bg-slate-100"
               }`}>
                 🔍
               </div>
               <div className="min-w-0">
                 <div className="flex items-center gap-2 mb-0.5">
-                  <span className={`text-sm font-semibold ${mode === "basic" ? "text-violet-700" : "text-slate-800"}`}>
+                  <span className={`text-sm font-semibold ${mode === "basic" ? "text-teal-700" : "text-slate-800"}`}>
                     AI Discovery
                   </span>
                   <span className="text-xs bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded-full font-medium">
@@ -111,9 +145,9 @@ export default function Dashboard() {
               </div>
             </div>
             {mode === "basic" && (
-              <div className="mt-3 pt-3 border-t border-violet-200 flex items-center gap-1.5">
-                <span className="w-1.5 h-1.5 rounded-full bg-violet-500" />
-                <span className="text-xs font-medium text-violet-600">Active</span>
+              <div className="mt-3 pt-3 border-t border-teal-200 flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-teal-500" />
+                <span className="text-xs font-medium text-teal-600">Active</span>
               </div>
             )}
           </button>
@@ -211,7 +245,64 @@ export default function Dashboard() {
 
           <div className="p-6">
             {mode === "basic" && (
-              <BasicScanPanel idpUsers={idpUsers} />
+              <div className="space-y-4">
+                {/* Step 1: Connect directory — collapses once connected */}
+                <div className={`rounded-xl border transition-all ${
+                  idpDone
+                    ? "border-emerald-200 bg-emerald-50"
+                    : "border-slate-200 bg-white"
+                }`}>
+                  <div className="flex items-center gap-3 px-4 py-3">
+                    <span className={`w-6 h-6 rounded-full flex items-center justify-center shrink-0 text-xs font-bold ${
+                      idpDone ? "bg-emerald-500 text-white" : "bg-slate-200 text-slate-600"
+                    }`}>
+                      {idpDone
+                        ? <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
+                        : "1"}
+                    </span>
+                    <div className="flex-1 min-w-0">
+                      <p className={`text-sm font-medium ${idpDone ? "text-emerald-700" : "text-slate-700"}`}>
+                        {idpDone
+                          ? `Directory connected — ${idpUsers.length} users synced`
+                          : "Connect your identity provider"}
+                      </p>
+                      {!idpDone && (
+                        <p className="text-xs text-slate-400">Google Workspace, Microsoft Entra, or Okta</p>
+                      )}
+                    </div>
+                    {idpDone && (
+                      <button
+                        onClick={() => setIdpUsers([])}
+                        className="text-xs text-emerald-600 hover:text-emerald-800 underline shrink-0"
+                      >
+                        Reconnect
+                      </button>
+                    )}
+                  </div>
+                  {!idpDone && (
+                    <div className="border-t border-slate-100 p-4">
+                      <IdPPanel onConnected={(users) => setIdpUsers(users)} />
+                    </div>
+                  )}
+                </div>
+
+                {/* Step 2: AI Discovery Scan */}
+                <div className={`rounded-xl border ${
+                  idpDone ? "border-slate-200 bg-white" : "border-slate-100 bg-slate-50 opacity-60 pointer-events-none"
+                }`}>
+                  <div className="flex items-center gap-3 px-4 py-3 border-b border-slate-100">
+                    <span className={`w-6 h-6 rounded-full flex items-center justify-center shrink-0 text-xs font-bold ${
+                      idpDone ? "bg-teal-600 text-white" : "bg-slate-200 text-slate-400"
+                    }`}>
+                      2
+                    </span>
+                    <p className="text-sm font-medium text-slate-700">Run AI Discovery Scan</p>
+                  </div>
+                  <div className="p-4">
+                    <BasicScanPanel idpUsers={idpUsers} />
+                  </div>
+                </div>
+              </div>
             )}
             {mode === "full" && fullTab === "policy" && (
               <PolicyPanel onAnalysisComplete={(result) => setPolicyResult(result)} />

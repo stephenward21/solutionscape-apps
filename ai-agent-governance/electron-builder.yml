@@ -1,0 +1,65 @@
+appId: com.solutionscape.ai-governance
+productName: SolutionScape AI Governance
+copyright: Copyright © 2025 SolutionScape
+
+# Electron entry point (compiled from electron/main.ts)
+extraMetadata:
+  main: electron-dist/electron/main.js
+
+directories:
+  output: dist-electron
+  buildResources: assets
+
+# Files to package — standalone Next.js output + compiled electron process
+files:
+  - electron-dist/**
+  - assets/**
+  - package.json
+
+extraResources:
+  - from: .next/standalone
+    to: .next/standalone
+  - from: .next/static
+    to: .next/standalone/.next/static
+  - from: public
+    to: .next/standalone/public
+
+# Native modules (better-sqlite3) cannot live inside asar — unpack them
+asarUnpack:
+  - "**/*.node"
+  - "**/better-sqlite3/**"
+
+# macOS
+mac:
+  category: public.app-category.business
+  icon: assets/icon.icns
+  hardenedRuntime: true
+  entitlements: assets/entitlements.mac.plist
+  entitlementsInherit: assets/entitlements.mac.plist
+  target:
+    - target: dmg
+      arch: [x64, arm64]
+    - target: zip
+      arch: [x64, arm64]
+
+dmg:
+  title: SolutionScape AI Governance
+
+# Windows
+win:
+  icon: assets/icon.ico
+  target:
+    - target: nsis
+      arch: [x64]
+
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+
+# Linux
+linux:
+  icon: assets/icon.png
+  category: Office
+  target:
+    - target: AppImage
+      arch: [x64]

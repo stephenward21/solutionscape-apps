@@ -2,52 +2,101 @@ import Link from "next/link";
 
 export default function HomePage() {
   return (
-    <main className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-950 to-slate-900">
+    <main className="min-h-screen bg-gradient-to-br from-slate-900 via-brand-900 to-slate-900">
       <div className="max-w-4xl mx-auto px-4 py-16">
+
         {/* Header */}
         <div className="text-center mb-16">
-          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-brand-500/20 border border-brand-500/30 mb-6">
-            <svg className="w-8 h-8 text-brand-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
-                d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+          {/* Hex logo mark */}
+          <div className="inline-flex items-center justify-center mb-6">
+            <svg width="72" height="72" viewBox="0 0 72 72" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <defs>
+                <linearGradient id="hg" x1="0" y1="0" x2="72" y2="72" gradientUnits="userSpaceOnUse">
+                  <stop offset="0%" stopColor="#2A8EC5" />
+                  <stop offset="100%" stopColor="#2EB598" />
+                </linearGradient>
+              </defs>
+              <polygon points="36,4 64,20 64,52 36,68 8,52 8,20" fill="url(#hg)" opacity="0.15" />
+              <polygon points="36,4 64,20 64,52 36,68 8,52 8,20" fill="none" stroke="url(#hg)" strokeWidth="1.5" opacity="0.6" />
+              {/* Node network */}
+              <circle cx="26" cy="36" r="4.5" fill="#2A8EC5" fillOpacity="0.9" />
+              <circle cx="46" cy="24" r="4.5" fill="#2EB598" fillOpacity="0.9" />
+              <circle cx="46" cy="48" r="4.5" fill="#2EB598" fillOpacity="0.9" />
+              <line x1="26" y1="36" x2="46" y2="24" stroke="white" strokeWidth="2" strokeOpacity="0.5" strokeLinecap="round" />
+              <line x1="26" y1="36" x2="46" y2="48" stroke="white" strokeWidth="2" strokeOpacity="0.5" strokeLinecap="round" />
+              <line x1="46" y1="24" x2="46" y2="48" stroke="white" strokeWidth="2" strokeOpacity="0.5" strokeLinecap="round" />
             </svg>
+          </div>
+          <div className="mb-3">
+            <span className="text-sm font-semibold tracking-widest text-brand-400 uppercase">SolutionScape</span>
           </div>
           <h1 className="text-4xl font-bold text-white mb-3">AI Agent Governance</h1>
           <p className="text-slate-400 text-lg max-w-2xl mx-auto">
-            Detect unauthorized AI tool usage across your organization, enforce AI policies,
-            and generate compliance reports per user.
+            Discover every AI tool your team uses, score the risk, and enforce
+            your acceptable use policy — all from your identity provider.
           </p>
         </div>
 
-        {/* Three-step flow */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-12">
-          <StepCard
-            step="1"
-            icon="📄"
-            title="Upload AI Policy"
-            description="Upload your organization's AI usage policy (PDF or Word). Claude extracts which tools are approved, prohibited, or conditional."
-            href="/dashboard?tab=policy"
-          />
-          <StepCard
-            step="2"
-            icon="🔌"
-            title="Connect Directory"
-            description="Connect Google Workspace, Microsoft Entra ID, or Okta to read OAuth sign-ins and audit logs for AI tool activity."
-            href="/dashboard?tab=idp"
-          />
-          <StepCard
-            step="3"
-            icon="📊"
-            title="View Compliance Report"
-            description="See which users are breaching policy, what tools they're using, and what systems those tools can access."
-            href="/dashboard?tab=report"
-          />
+        {/* Two-path cards */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mb-12">
+          <Link
+            href="/dashboard"
+            className="group bg-teal-500/10 hover:bg-teal-500/15 border border-teal-500/30 hover:border-teal-400/60 rounded-2xl p-6 transition-all"
+          >
+            <div className="flex items-center gap-3 mb-4">
+              <span className="text-3xl">🔍</span>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h2 className="text-white font-semibold">AI Discovery</h2>
+                  <span className="text-xs bg-teal-500/20 text-teal-400 border border-teal-500/30 px-2 py-0.5 rounded-full font-medium">Quick start</span>
+                </div>
+                <p className="text-xs text-slate-400">No policy needed</p>
+              </div>
+            </div>
+            <p className="text-slate-400 text-sm leading-relaxed mb-4">
+              Connect your directory and get an instant inventory of every AI tool in use,
+              what each one does, and how risky it is for your org.
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {["AI tool inventory", "Risk scores", "Web research"].map((t) => (
+                <span key={t} className="text-xs bg-white/5 border border-white/10 text-slate-400 px-2 py-0.5 rounded-full">{t}</span>
+              ))}
+            </div>
+          </Link>
+
+          <Link
+            href="/dashboard"
+            className="group bg-brand-500/10 hover:bg-brand-500/15 border border-brand-500/30 hover:border-brand-400/60 rounded-2xl p-6 transition-all"
+          >
+            <div className="flex items-center gap-3 mb-4">
+              <span className="text-3xl">📋</span>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h2 className="text-white font-semibold">Policy Compliance</h2>
+                  <span className="text-xs bg-brand-500/20 text-brand-300 border border-brand-500/30 px-2 py-0.5 rounded-full font-medium">3 steps</span>
+                </div>
+                <p className="text-xs text-slate-400">For orgs with an AI policy</p>
+              </div>
+            </div>
+            <p className="text-slate-400 text-sm leading-relaxed mb-4">
+              Upload your AI acceptable use policy, connect your directory, and get a
+              per-user compliance report showing exactly who is in breach and why.
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {["Upload policy", "Connect directory", "Per-user report"].map((t, i) => (
+                <span key={t} className="flex items-center gap-1 text-xs bg-white/5 border border-white/10 text-slate-400 px-2 py-0.5 rounded-full">
+                  <span className="text-slate-600 font-mono">{i + 1}</span>
+                  {t}
+                </span>
+              ))}
+            </div>
+          </Link>
         </div>
 
         <div className="text-center">
           <Link
             href="/dashboard"
-            className="inline-flex items-center gap-2 bg-brand-600 hover:bg-brand-500 text-white font-semibold rounded-xl px-8 py-3.5 transition-colors text-lg"
+            className="inline-flex items-center gap-2 bg-gradient-to-r from-brand-600 to-teal-600 hover:from-brand-500 hover:to-teal-500 text-white font-semibold rounded-xl px-8 py-3.5 transition-all text-lg shadow-lg shadow-brand-900/40"
           >
             Open Dashboard
             <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -57,35 +106,9 @@ export default function HomePage() {
         </div>
 
         <footer className="mt-16 text-center text-xs text-slate-600">
-          Powered by Solutionscape · AI analysis by Claude
+          Powered by SolutionScape · AI analysis by Claude
         </footer>
       </div>
     </main>
-  );
-}
-
-function StepCard({
-  step, icon, title, description, href,
-}: {
-  step: string;
-  icon: string;
-  title: string;
-  description: string;
-  href: string;
-}) {
-  return (
-    <Link
-      href={href}
-      className="group bg-white/5 hover:bg-white/8 border border-white/10 hover:border-brand-500/40 rounded-2xl p-6 transition-all"
-    >
-      <div className="flex items-center gap-3 mb-3">
-        <span className="w-6 h-6 rounded-full bg-brand-500/20 border border-brand-500/30 text-brand-400 text-xs font-bold flex items-center justify-center">
-          {step}
-        </span>
-        <span className="text-2xl">{icon}</span>
-      </div>
-      <h2 className="text-white font-semibold mb-2">{title}</h2>
-      <p className="text-slate-400 text-sm leading-relaxed">{description}</p>
-    </Link>
   );
 }

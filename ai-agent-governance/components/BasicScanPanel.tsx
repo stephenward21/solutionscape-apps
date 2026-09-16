@@ -73,7 +73,7 @@ export default function BasicScanPanel({ idpUsers }: BasicScanPanelProps) {
               label={
                 idpUsers.length > 0
                   ? `Directory connected — ${idpUsers.length} users with AI activity`
-                  : "Connect a directory in the Directory tab first"
+                  : "Connect your identity provider above"
               }
             />
             <InfoRow done label="Web research — automatically looks up unfamiliar apps" />
