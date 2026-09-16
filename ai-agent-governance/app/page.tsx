@@ -40,7 +40,7 @@ export default function HomePage() {
         {/* Two-path cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mb-8">
           <Link
-            href="/dashboard"
+            href="/dashboard?mode=discovery"
             className="group bg-teal-500/10 hover:bg-teal-500/15 border border-teal-500/30 hover:border-teal-400/60 rounded-2xl p-6 transition-all cursor-pointer"
           >
             <div className="flex items-center gap-3 mb-4">
@@ -65,7 +65,7 @@ export default function HomePage() {
           </Link>
 
           <Link
-            href="/dashboard?tab=policy"
+            href="/dashboard?mode=compliance&tab=policy"
             className="group bg-brand-500/10 hover:bg-brand-500/15 border border-brand-500/30 hover:border-brand-400/60 rounded-2xl p-6 transition-all cursor-pointer"
           >
             <div className="flex items-center gap-3 mb-4">
