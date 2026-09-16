@@ -1,7 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import type { BasicAIReport, AIToolProfile, AIRiskLevel, UserActivity, IdPProvider } from "@/lib/types";
+import type { OrgVerticalConfig } from "@/lib/verticals";
+import { loadOrgConfig } from "./VerticalConfigPanel";
+import { VERTICAL_DEFINITIONS } from "@/lib/verticals";
 import NotificationsPanel from "./NotificationsPanel";
 import RevokePanel from "./RevokePanel";
 
@@ -24,6 +27,11 @@ export default function BasicScanPanel({ idpUsers, provider, credentials }: Basi
   const [report, setReport] = useState<BasicAIReport | null>(null);
   const [filter, setFilter] = useState<AIRiskLevel | "all">("all");
   const [search, setSearch] = useState("");
+  const [orgConfig, setOrgConfig] = useState<OrgVerticalConfig | null>(null);
+
+  useEffect(() => {
+    setOrgConfig(loadOrgConfig());
+  }, []);
 
   async function runScan() {
     setLoading(true);
@@ -32,7 +40,7 @@ export default function BasicScanPanel({ idpUsers, provider, credentials }: Basi
       const res = await fetch("/api/basic-scan", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ users: idpUsers }),
+        body: JSON.stringify({ users: idpUsers, orgConfig: orgConfig ?? undefined }),
       });
       const data = await res.json() as BasicAIReport & { error?: string };
       if (!res.ok || data.error) throw new Error(data.error ?? "Scan failed");
@@ -81,8 +89,15 @@ export default function BasicScanPanel({ idpUsers, provider, credentials }: Basi
               }
             />
             <InfoRow done label="Web research — automatically looks up unfamiliar apps" />
+            <InfoRow
+              done={!!orgConfig && orgConfig.vertical !== "general"}
+              label={
+                orgConfig && orgConfig.vertical !== "general"
+                  ? `${VERTICAL_DEFINITIONS[orgConfig.vertical].icon} ${VERTICAL_DEFINITIONS[orgConfig.vertical].label} vertical — regulation-cited risk analysis`
+                  : "Industry profile — configure in Settings for regulation-cited scoring"
+              }
+            />
             <InfoRow done label="Risk scoring — based on AI type and data access level" />
-            <InfoRow done label="No policy needed — works for any org at any stage" />
           </div>
 
           {error && (
@@ -122,16 +137,24 @@ export default function BasicScanPanel({ idpUsers, provider, credentials }: Basi
   return (
     <div className="space-y-5">
       {/* Header */}
-      <div className="flex items-start justify-between">
+      <div className="flex items-start justify-between gap-3">
         <div>
-          <h2 className="text-lg font-semibold text-slate-800">AI Discovery Report</h2>
+          <div className="flex items-center gap-2 flex-wrap">
+            <h2 className="text-lg font-semibold text-slate-800">AI Discovery Report</h2>
+            {orgConfig && orgConfig.vertical !== "general" && (
+              <span className="text-xs bg-brand-100 text-brand-700 border border-brand-200 px-2 py-0.5 rounded-full font-medium">
+                {VERTICAL_DEFINITIONS[orgConfig.vertical].icon} {VERTICAL_DEFINITIONS[orgConfig.vertical].label}
+              </span>
+            )}
+          </div>
           <p className="text-xs text-slate-400">
             Generated {new Date(report.generatedAt).toLocaleString()} · {report.totalUsersScanned} users scanned
+            {orgConfig?.frameworks.length ? ` · ${orgConfig.frameworks.length} frameworks applied` : ""}
           </p>
         </div>
         <button
           onClick={() => { setReport(null); }}
-          className="text-xs border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 px-3 py-1.5 rounded-lg transition-colors"
+          className="text-xs border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 px-3 py-1.5 rounded-lg transition-colors shrink-0"
         >
           Re-scan
         </button>

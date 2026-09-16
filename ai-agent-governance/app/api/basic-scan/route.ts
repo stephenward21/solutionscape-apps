@@ -11,6 +11,8 @@ import { NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 import { v4 as uuidv4 } from "uuid";
 import type { UserActivity, BasicAIReport, AIToolProfile, AIRiskLevel } from "@/lib/types";
+import type { OrgVerticalConfig } from "@/lib/verticals";
+import { buildVerticalPromptContext } from "@/lib/verticals";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -195,7 +197,8 @@ async function generateReport(
   client: Anthropic,
   aggregated: Map<string, AggregatedTool>,
   profiles: Map<string, { category: string; description: string; capabilities: string[]; webSummary: string }>,
-  totalUsers: number
+  totalUsers: number,
+  orgConfig?: OrgVerticalConfig,
 ): Promise<BasicAIReport> {
   // Build per-tool context for the prompt
   const toolEntries = Array.from(aggregated.values())
@@ -242,28 +245,39 @@ Systems Accessed: ${t.systems.join(", ") || "none recorded"}`
     )
     .join("\n\n");
 
+  const verticalContext = orgConfig
+    ? buildVerticalPromptContext(orgConfig)
+    : "";
+
+  const hasVertical = !!orgConfig && orgConfig.vertical !== "general";
+
   const prompt = `You are an AI governance analyst helping a company understand its AI tool landscape. This company does NOT yet have an AI acceptable use policy — your job is to help them understand what AI tools are in use, what risks they pose, and what they should prioritize.
 
-ORGANIZATION CONTEXT:
+${verticalContext ? `${verticalContext}\n\n` : ""}SCAN RESULTS:
 - Total employees scanned: ${totalUsers}
 - Total AI tools found: ${toolEntries.length}
 
 AI TOOLS IN USE:
 ${toolContext}
 
+${hasVertical
+  ? `SCORING INSTRUCTIONS (vertical-specific):
+Apply the risk elevation rules from the VERTICAL-SPECIFIC RISK GUIDANCE above when assigning scores.
+Your risk factors MUST cite specific regulatory requirements (e.g. "HIPAA §164.312(a)(1) — Access Control", "NERC CIP-007-6 R1 — Ports and Services") where applicable.
+The summary and recommendations must be written for a compliance officer or security leader in the ${orgConfig!.vertical.replace(/_/g, " ")} industry — use industry-appropriate language and cite the active compliance frameworks.`
+  : `SCORING INSTRUCTIONS (general):
 For each tool, assign a risk score (0–100) and risk level (LOW / MEDIUM / HIGH / CRITICAL) based on:
-- Tool category: Autonomous Agents and Browser Automation = highest risk (can act independently)
-- Code Generation tools = high risk (IP exposure, security)
-- LLM Chat tools = medium risk (data leakage risk)
-- Creative/productivity tools = lower risk
+- Tool category: Autonomous Agents and Browser Automation = highest risk
+- Code Generation = high risk (IP exposure)
+- LLM Chat = medium risk (data leakage)
 - OAuth scopes: email/drive/calendar/admin access significantly increases risk
-- Number of users: wider adoption = higher organizational risk
+- Number of users: wider adoption = higher organizational risk`}
 
 Return ONLY valid JSON (no markdown):
 {
-  "summary": "<3-4 sentence executive narrative — what AI tools are in use, what the overall risk posture looks like, and the most pressing concern>",
+  "summary": "<3-4 sentence executive narrative — what AI tools are in use, overall risk posture, and the most pressing concern${hasVertical ? `. Reference relevant compliance frameworks (${orgConfig!.frameworks.join(", ")}) where appropriate` : ""}>",
   "recommendations": [
-    "<specific, actionable recommendation — e.g. 'Establish an AI acceptable use policy that addresses these 5 tool categories'>",
+    "<specific, actionable recommendation${hasVertical ? " with regulatory context where applicable" : ""}>",
     "<recommendation 2>",
     "<recommendation 3>"
   ],
@@ -279,7 +293,7 @@ Return ONLY valid JSON (no markdown):
       "userEmails": ["<email>"],
       "riskScore": 0,
       "riskLevel": "LOW",
-      "riskFactors": ["<why this score — be specific, e.g. 'Has admin directory access', 'Can autonomously browse the web'>"]
+      "riskFactors": ["<specific risk reason${hasVertical ? " — include regulatory citation where applicable, e.g. 'HIPAA §164.312 — email access risks ePHI exposure'" : ""}>"]
     }
   ]
 }`;
@@ -356,7 +370,7 @@ export async function POST(req: Request): Promise<NextResponse> {
     return NextResponse.json({ error: "ANTHROPIC_API_KEY is not configured" }, { status: 500 });
   }
 
-  let body: { users?: UserActivity[] };
+  let body: { users?: UserActivity[]; orgConfig?: OrgVerticalConfig };
   try {
     body = await req.json() as typeof body;
   } catch {
@@ -364,6 +378,7 @@ export async function POST(req: Request): Promise<NextResponse> {
   }
 
   const users = body.users ?? [];
+  const orgConfig = body.orgConfig;
   if (users.length === 0) {
     return NextResponse.json(
       { error: "No user data provided. Connect a directory in the Directory tab first." },
@@ -400,7 +415,7 @@ export async function POST(req: Request): Promise<NextResponse> {
     const mergedProfiles = new Map<string, { category: string; description: string; capabilities: string[]; webSummary: string }>();
     for (const [k, v] of webProfiles) mergedProfiles.set(k, v);
 
-    const report = await generateReport(client, aggregated, mergedProfiles, users.length);
+    const report = await generateReport(client, aggregated, mergedProfiles, users.length, orgConfig);
     return NextResponse.json(report);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);

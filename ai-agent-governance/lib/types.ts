@@ -1,3 +1,6 @@
+// Re-export vertical config types so callers only need one import
+export type { IndustryVertical, ComplianceFramework, OrgVerticalConfig } from "./verticals";
+
 // ─── Policy analysis ──────────────────────────────────────────────────────────
 
 export interface PolicyFile {

@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import type { ReportSummary, ScheduleConfig } from "@/electron/db";
+import VerticalConfigPanel from "./VerticalConfigPanel";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -432,15 +433,33 @@ function ReportHistorySection() {
 // ─── Main panel ───────────────────────────────────────────────────────────────
 
 export default function SettingsPanel() {
+  // Organization Profile is available in both web and desktop modes
+  const orgProfileSection = (
+    <div className="bg-white border border-slate-200 rounded-xl p-5">
+      <VerticalConfigPanel />
+    </div>
+  );
+
   if (!isElectron) {
     return (
-      <div className="flex flex-col items-center justify-center py-16 text-center">
-        <div className="text-4xl mb-4">🖥️</div>
-        <p className="text-sm font-semibold text-slate-700 mb-1">Desktop app required</p>
-        <p className="text-xs text-slate-400 max-w-sm">
-          Credential storage, scheduled scans, and scan history are only available in the
-          SolutionScape desktop app. Download it to get started.
-        </p>
+      <div className="space-y-5">
+        <div>
+          <h2 className="text-lg font-semibold text-slate-800 mb-1">Settings</h2>
+          <p className="text-sm text-slate-500">
+            Configure your organization profile to enable industry-specific risk analysis.
+          </p>
+        </div>
+        {orgProfileSection}
+        <div className="bg-slate-50 border border-slate-200 rounded-xl p-5 flex items-start gap-3">
+          <span className="text-2xl shrink-0">🖥️</span>
+          <div>
+            <p className="text-sm font-semibold text-slate-700 mb-1">Desktop app required for additional features</p>
+            <p className="text-xs text-slate-400">
+              Encrypted credential storage, scheduled scans, and scan history are only available in the
+              SolutionScape desktop app.
+            </p>
+          </div>
+        </div>
       </div>
     );
   }
@@ -453,6 +472,7 @@ export default function SettingsPanel() {
           Credentials are encrypted with your OS keychain and never leave this device.
         </p>
       </div>
+      {orgProfileSection}
       <ApiKeySection />
       <IdPCredsSection />
       <ScheduleSection />
