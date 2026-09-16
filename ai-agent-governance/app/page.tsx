@@ -38,10 +38,10 @@ export default function HomePage() {
         </div>
 
         {/* Two-path cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mb-12">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mb-8">
           <Link
             href="/dashboard"
-            className="group bg-teal-500/10 hover:bg-teal-500/15 border border-teal-500/30 hover:border-teal-400/60 rounded-2xl p-6 transition-all"
+            className="group bg-teal-500/10 hover:bg-teal-500/15 border border-teal-500/30 hover:border-teal-400/60 rounded-2xl p-6 transition-all cursor-pointer"
           >
             <div className="flex items-center gap-3 mb-4">
               <span className="text-3xl">🔍</span>
@@ -65,8 +65,8 @@ export default function HomePage() {
           </Link>
 
           <Link
-            href="/dashboard"
-            className="group bg-brand-500/10 hover:bg-brand-500/15 border border-brand-500/30 hover:border-brand-400/60 rounded-2xl p-6 transition-all"
+            href="/dashboard?tab=policy"
+            className="group bg-brand-500/10 hover:bg-brand-500/15 border border-brand-500/30 hover:border-brand-400/60 rounded-2xl p-6 transition-all cursor-pointer"
           >
             <div className="flex items-center gap-3 mb-4">
               <span className="text-3xl">📋</span>
@@ -90,18 +90,6 @@ export default function HomePage() {
                 </span>
               ))}
             </div>
-          </Link>
-        </div>
-
-        <div className="text-center">
-          <Link
-            href="/dashboard"
-            className="inline-flex items-center gap-2 bg-gradient-to-r from-brand-600 to-teal-600 hover:from-brand-500 hover:to-teal-500 text-white font-semibold rounded-xl px-8 py-3.5 transition-all text-lg shadow-lg shadow-brand-900/40"
-          >
-            Open Dashboard
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
-            </svg>
           </Link>
         </div>
 
