@@ -5,21 +5,23 @@ import { useSearchParams, useRouter } from "next/navigation";
 import PolicyPanel from "./PolicyPanel";
 import IdPPanel from "./IdPPanel";
 import ReportPanel from "./ReportPanel";
+import BasicScanPanel from "./BasicScanPanel";
 import type { PolicyAnalysisResult, UserActivity } from "@/lib/types";
 
-type Tab = "policy" | "idp" | "report";
+type Tab = "policy" | "idp" | "discovery" | "report";
 
-const TABS: { key: Tab; label: string; icon: string }[] = [
-  { key: "policy", label: "AI Policy",        icon: "📄" },
-  { key: "idp",    label: "Directory",         icon: "🔌" },
-  { key: "report", label: "Compliance Report", icon: "📊" },
+const TABS: { key: Tab; label: string; icon: string; description: string }[] = [
+  { key: "policy",    label: "AI Policy",        icon: "📄", description: "Upload your acceptable use policy" },
+  { key: "idp",       label: "Directory",         icon: "🔌", description: "Connect your identity provider" },
+  { key: "discovery", label: "AI Discovery",      icon: "🔍", description: "See all AI tools in use — no policy needed" },
+  { key: "report",    label: "Compliance Report", icon: "📊", description: "Policy vs. actual usage comparison" },
 ];
 
 export default function Dashboard() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<Tab>(
-    (searchParams.get("tab") as Tab) ?? "policy"
+    (searchParams.get("tab") as Tab) ?? "discovery"
   );
 
   // Shared state — populated by PolicyPanel and IdPPanel, consumed by ReportPanel
@@ -66,6 +68,7 @@ export default function Dashboard() {
                 <button
                   key={tab.key}
                   onClick={() => switchTab(tab.key)}
+                  title={tab.description}
                   className={`flex items-center gap-2 px-4 py-4 text-sm font-medium border-b-2 transition-colors -mb-px ${
                     activeTab === tab.key
                       ? "border-brand-600 text-brand-600"
@@ -74,6 +77,11 @@ export default function Dashboard() {
                 >
                   <span>{tab.icon}</span>
                   {tab.label}
+                  {tab.key === "discovery" && idpDone && (
+                    <span className="text-xs bg-violet-100 text-violet-700 px-1.5 py-0.5 rounded-full font-normal">
+                      ready
+                    </span>
+                  )}
                   {done && (
                     <span className="w-4 h-4 bg-emerald-500 rounded-full flex items-center justify-center shrink-0">
                       <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
@@ -96,6 +104,9 @@ export default function Dashboard() {
               <IdPPanel
                 onConnected={(users) => setIdpUsers(users)}
               />
+            )}
+            {activeTab === "discovery" && (
+              <BasicScanPanel idpUsers={idpUsers} />
             )}
             {activeTab === "report" && (
               <ReportPanel

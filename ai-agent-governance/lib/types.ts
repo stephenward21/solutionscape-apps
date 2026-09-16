@@ -91,6 +91,38 @@ export interface BreachDetail {
   recommendation: string;
 }
 
+// ─── Basic AI Discovery (no policy required) ─────────────────────────────────
+
+export type AIRiskLevel = "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
+
+export interface AIToolProfile {
+  tool: string;
+  vendor: string;
+  category: string;           // e.g. "LLM Chat", "Autonomous Agent", "Code Generation"
+  description: string;        // what the tool does
+  aiCapabilities: string[];   // specific AI capabilities it offers
+  dataAccess: string[];       // systems it can touch (aggregated across all users)
+  userCount: number;
+  userEmails: string[];
+  riskScore: number;          // 0–100
+  riskLevel: AIRiskLevel;
+  riskFactors: string[];      // why this score
+  webResearchSummary?: string;
+  recognized: boolean;        // false = not in our signature list, looked up via web
+}
+
+export interface BasicAIReport {
+  id: string;
+  generatedAt: string;
+  totalUsersScanned: number;
+  totalAIToolsFound: number;
+  criticalTools: number;
+  highRiskTools: number;
+  summary: string;            // AI-generated executive narrative
+  recommendations: string[];  // top actions for the org to take next
+  toolProfiles: AIToolProfile[];
+}
+
 // ─── Report ───────────────────────────────────────────────────────────────────
 
 export interface GovernanceReport {
