@@ -1,7 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import type { BasicAIReport, AIToolProfile, AIRiskLevel, UserActivity } from "@/lib/types";
+import type { BasicAIReport, AIToolProfile, AIRiskLevel, UserActivity, IdPProvider } from "@/lib/types";
+import NotificationsPanel from "./NotificationsPanel";
+import RevokePanel from "./RevokePanel";
 
 const RISK_CONFIG: Record<AIRiskLevel, { label: string; badge: string; bar: string; dot: string; border: string }> = {
   CRITICAL: { label: "Critical",  badge: "bg-rose-100 text-rose-700",    bar: "bg-rose-500",    dot: "bg-rose-500",    border: "border-rose-200" },
@@ -12,9 +14,11 @@ const RISK_CONFIG: Record<AIRiskLevel, { label: string; badge: string; bar: stri
 
 interface BasicScanPanelProps {
   idpUsers: UserActivity[];
+  provider?: IdPProvider;
+  credentials?: Record<string, string>;
 }
 
-export default function BasicScanPanel({ idpUsers }: BasicScanPanelProps) {
+export default function BasicScanPanel({ idpUsers, provider, credentials }: BasicScanPanelProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [report, setReport] = useState<BasicAIReport | null>(null);
@@ -209,6 +213,21 @@ export default function BasicScanPanel({ idpUsers }: BasicScanPanelProps) {
           <div className="text-center py-10 text-slate-400 text-sm">No tools match the current filter.</div>
         )}
       </div>
+
+      {/* Action panels */}
+      {(report.criticalTools > 0 || report.highRiskTools > 0) && (
+        <div className="space-y-3 pt-2">
+          <div className="flex items-center gap-2">
+            <div className="h-px flex-1 bg-slate-200" />
+            <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Take Action</span>
+            <div className="h-px flex-1 bg-slate-200" />
+          </div>
+          <NotificationsPanel report={report} idpUsers={idpUsers} />
+          {provider && credentials && provider !== "manual" && (
+            <RevokePanel idpUsers={idpUsers} provider={provider} credentials={credentials} />
+          )}
+        </div>
+      )}
     </div>
   );
 }

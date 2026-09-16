@@ -48,6 +48,7 @@ export interface UserActivity {
   department?: string;
   aiToolsDetected: DetectedAITool[];
   lastActivityAt?: string;
+  provider?: IdPProvider;
 }
 
 export interface DetectedAITool {
@@ -59,10 +60,14 @@ export interface DetectedAITool {
   oauthScopes?: string[];     // what permissions the tool requested
   systemsAccessed?: string[]; // e.g. ["Google Drive", "Gmail", "GitHub"]
   detectionMethod: "oauth" | "saml" | "audit-log" | "manual";
-  // false when the app name didn't match our known AI-tool signature list —
-  // it's a real OAuth grant, just not yet identified as a specific product.
-  // Surfaced for review instead of being silently dropped.
   recognized?: boolean;
+  // Revocation identifiers (provider-specific):
+  // Google: OAuth client_id from audit logs
+  // Microsoft: service principal object ID (Entra ID)
+  // Okta: app ID
+  clientId?: string;
+  // Microsoft only: app role assignment ID for targeted revocation
+  idpItemId?: string;
 }
 
 // ─── Compliance / breach analysis ────────────────────────────────────────────

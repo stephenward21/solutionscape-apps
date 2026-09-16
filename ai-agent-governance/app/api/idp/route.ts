@@ -279,6 +279,7 @@ async function connectGoogle(creds: { serviceAccountJson: string; adminEmail: st
           // column in the Admin Console. client_id is an opaque OAuth ID string
           // and should NOT be used for name matching.
           const appName = param("app_name") ?? "";
+          const oauthClientId = param("client_id") ?? undefined;
           if (!appName) continue;
 
           // Google first-party apps are irrelevant for AI governance — skip them.
@@ -321,6 +322,7 @@ async function connectGoogle(creds: { serviceAccountJson: string; adminEmail: st
               systemsAccessed,
               detectionMethod: "oauth",
               recognized,
+              clientId: oauthClientId,
               revoked: eventName === "revoke",
             });
           }
@@ -350,6 +352,7 @@ async function connectGoogle(creds: { serviceAccountJson: string; adminEmail: st
       department: userInfo.department,
       aiToolsDetected: activeTools.map(({ revoked: _revoked, ...rest }) => rest),
       lastActivityAt: new Date(Math.max(...timestamps)).toISOString(),
+      provider: "google",
     });
   }
 
@@ -443,11 +446,10 @@ async function connectMicrosoft(creds: { tenantId: string; clientId: string; cli
       if (!assignRes.ok) continue;
 
       const assignData = await assignRes.json() as {
-        value: Array<{ principalId: string; principalDisplayName: string; createdDateTime: string }>;
+        value: Array<{ id: string; principalId: string; principalDisplayName: string; createdDateTime: string }>;
       };
 
       for (const assignment of assignData.value) {
-        const email = assignment.principalDisplayName; // may not be email; Graph returns UPN on users endpoint
         const userId = assignment.principalId;
         if (!toolsPerUser.has(userId)) toolsPerUser.set(userId, new Map());
         const userTools = toolsPerUser.get(userId)!;
@@ -457,6 +459,8 @@ async function connectMicrosoft(creds: { tenantId: string; clientId: string; cli
           firstSeenAt: assignment.createdDateTime,
           lastSeenAt: assignment.createdDateTime,
           detectionMethod: "saml",
+          clientId: app.id,          // service principal object ID
+          idpItemId: assignment.id,  // app role assignment ID for targeted removal
         });
       }
     } catch {
@@ -488,6 +492,7 @@ async function connectMicrosoft(creds: { tenantId: string; clientId: string; cli
       email,
       displayName,
       aiToolsDetected: Array.from(tools.values()),
+      provider: "microsoft",
     });
   }
 
@@ -559,6 +564,7 @@ async function connectOkta(creds: { domain: string; apiToken: string }): Promise
           firstSeenAt: u.created,
           lastSeenAt: u.lastUpdated,
           detectionMethod: "saml",
+          clientId: app.id,  // Okta app ID for revocation
         });
       }
     } catch {
@@ -571,5 +577,6 @@ async function connectOkta(creds: { domain: string; apiToken: string }): Promise
     email: data.email,
     displayName: data.displayName,
     aiToolsDetected: Array.from(data.tools.values()),
+    provider: "okta" as const,
   }));
 }

@@ -7,7 +7,7 @@ import PolicyPanel from "./PolicyPanel";
 import IdPPanel from "./IdPPanel";
 import ReportPanel from "./ReportPanel";
 import BasicScanPanel from "./BasicScanPanel";
-import type { PolicyAnalysisResult, UserActivity } from "@/lib/types";
+import type { PolicyAnalysisResult, UserActivity, IdPProvider } from "@/lib/types";
 
 type Mode = "basic" | "full";
 type FullTab = "policy" | "idp" | "report";
@@ -33,8 +33,10 @@ export default function Dashboard() {
       : "policy"
   );
 
-  const [policyResult, setPolicyResult] = useState<PolicyAnalysisResult | null>(null);
-  const [idpUsers, setIdpUsers]         = useState<UserActivity[]>([]);
+  const [policyResult, setPolicyResult]       = useState<PolicyAnalysisResult | null>(null);
+  const [idpUsers, setIdpUsers]               = useState<UserActivity[]>([]);
+  const [activeProvider, setActiveProvider]   = useState<IdPProvider | undefined>();
+  const [activeCredentials, setActiveCredentials] = useState<Record<string, string> | undefined>();
 
   function switchMode(m: Mode) {
     setMode(m);
@@ -272,7 +274,7 @@ export default function Dashboard() {
                     </div>
                     {idpDone && (
                       <button
-                        onClick={() => setIdpUsers([])}
+                        onClick={() => { setIdpUsers([]); setActiveProvider(undefined); setActiveCredentials(undefined); }}
                         className="text-xs text-emerald-600 hover:text-emerald-800 underline shrink-0"
                       >
                         Reconnect
@@ -281,7 +283,11 @@ export default function Dashboard() {
                   </div>
                   {!idpDone && (
                     <div className="border-t border-slate-100 p-4">
-                      <IdPPanel onConnected={(users) => setIdpUsers(users)} />
+                      <IdPPanel onConnected={(users, provider, creds) => {
+                        setIdpUsers(users);
+                        setActiveProvider(provider);
+                        setActiveCredentials(creds);
+                      }} />
                     </div>
                   )}
                 </div>
@@ -299,7 +305,11 @@ export default function Dashboard() {
                     <p className="text-sm font-medium text-slate-700">Run AI Discovery Scan</p>
                   </div>
                   <div className="p-4">
-                    <BasicScanPanel idpUsers={idpUsers} />
+                    <BasicScanPanel
+                      idpUsers={idpUsers}
+                      provider={activeProvider}
+                      credentials={activeCredentials}
+                    />
                   </div>
                 </div>
               </div>
@@ -308,7 +318,11 @@ export default function Dashboard() {
               <PolicyPanel onAnalysisComplete={(result) => setPolicyResult(result)} />
             )}
             {mode === "full" && fullTab === "idp" && (
-              <IdPPanel onConnected={(users) => setIdpUsers(users)} />
+              <IdPPanel onConnected={(users, provider, creds) => {
+              setIdpUsers(users);
+              setActiveProvider(provider);
+              setActiveCredentials(creds);
+            }} />
             )}
             {mode === "full" && fullTab === "report" && (
               <ReportPanel policyResult={policyResult} idpUsers={idpUsers} />

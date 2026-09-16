@@ -73,7 +73,7 @@ type Creds = GoogleCreds | MicrosoftCreds | OktaCreds | null;
 // ─── Panel ────────────────────────────────────────────────────────────────────
 
 interface IdPPanelProps {
-  onConnected?: (users: UserActivity[]) => void;
+  onConnected?: (users: UserActivity[], provider: IdPProvider, credentials: Record<string, string>) => void;
 }
 
 export default function IdPPanel({ onConnected }: IdPPanelProps) {
@@ -107,7 +107,7 @@ export default function IdPPanel({ onConnected }: IdPPanelProps) {
       const users = data.users ?? [];
       setActivity(users);
       setConnected(true);
-      onConnected?.(users);
+      onConnected?.(users, selected!, credentials as unknown as Record<string, string>);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
