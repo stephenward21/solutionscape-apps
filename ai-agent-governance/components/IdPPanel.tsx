@@ -1,7 +1,11 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import type { IdPProvider, UserActivity } from "@/lib/types";
+import type { IndustryVertical } from "@/lib/verticals";
+import { VERTICAL_DEFINITIONS } from "@/lib/verticals";
+import { loadOrgConfig } from "@/components/VerticalConfigPanel";
+import { getDemoUsers, getDemoMeta } from "@/lib/demo-data";
 
 const GoogleIcon = () => (
   <svg viewBox="0 0 24 24" width="28" height="28" xmlns="http://www.w3.org/2000/svg">
@@ -72,25 +76,41 @@ type Creds = GoogleCreds | MicrosoftCreds | OktaCreds | null;
 
 // ─── Panel ────────────────────────────────────────────────────────────────────
 
+type SelectedProvider = IdPProvider | "demo" | null;
+
 interface IdPPanelProps {
   onConnected?: (users: UserActivity[], provider: IdPProvider, credentials: Record<string, string>) => void;
 }
 
 export default function IdPPanel({ onConnected }: IdPPanelProps) {
-  const [selected, setSelected]   = useState<IdPProvider | null>(null);
-  const [creds, setCreds]         = useState<Creds>(null);
-  const [activity, setActivity]   = useState<UserActivity[]>([]);
-  const [loading, setLoading]     = useState(false);
-  const [error, setError]         = useState<string | null>(null);
-  const [connected, setConnected] = useState(false);
+  const [selected, setSelected]         = useState<SelectedProvider>(null);
+  const [creds, setCreds]               = useState<Creds>(null);
+  const [activity, setActivity]         = useState<UserActivity[]>([]);
+  const [loading, setLoading]           = useState(false);
+  const [error, setError]               = useState<string | null>(null);
+  const [connected, setConnected]       = useState(false);
+  const [demoVertical, setDemoVertical] = useState<IndustryVertical | null>(null);
 
-  function selectProvider(provider: IdPProvider) {
+  useEffect(() => {
+    const cfg = loadOrgConfig();
+    if (cfg && cfg.vertical !== "general") setDemoVertical(cfg.vertical);
+  }, []);
+
+  function selectProvider(provider: SelectedProvider) {
     if (selected === provider) return;
     setSelected(provider);
     setCreds(null);
     setError(null);
     setConnected(false);
     setActivity([]);
+  }
+
+  function loadDemo() {
+    if (!demoVertical) return;
+    const users = getDemoUsers(demoVertical);
+    setActivity(users);
+    setConnected(true);
+    onConnected?.(users, "google", {});
   }
 
   async function connect(credentials: Creds) {
@@ -107,7 +127,7 @@ export default function IdPPanel({ onConnected }: IdPPanelProps) {
       const users = data.users ?? [];
       setActivity(users);
       setConnected(true);
-      onConnected?.(users, selected!, credentials as unknown as Record<string, string>);
+      onConnected?.(users, selected as IdPProvider, credentials as unknown as Record<string, string>);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -149,6 +169,43 @@ export default function IdPPanel({ onConnected }: IdPPanelProps) {
             <p className="text-xs text-slate-500 leading-relaxed">{p.description}</p>
           </button>
         ))}
+
+        {/* Demo Mode card — only visible when a non-general vertical is configured */}
+        {demoVertical && (
+          <button
+            onClick={() => selectProvider("demo")}
+            className={`text-left border-2 border-dashed rounded-xl p-4 transition-all sm:col-span-2 ${
+              selected === "demo"
+                ? "border-teal-400 bg-teal-50 shadow-sm"
+                : "border-teal-200 bg-white hover:border-teal-400 hover:bg-teal-50"
+            }`}
+          >
+            <div className="flex items-center gap-3 mb-2">
+              <span className="text-xl shrink-0">{VERTICAL_DEFINITIONS[demoVertical].icon}</span>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <p className={`text-sm font-semibold ${selected === "demo" ? "text-teal-800" : "text-slate-800"}`}>
+                    Demo Mode — {VERTICAL_DEFINITIONS[demoVertical].label}
+                  </p>
+                  <span className="text-xs font-medium bg-teal-100 text-teal-700 px-2 py-0.5 rounded-full">
+                    No credentials needed
+                  </span>
+                  {selected === "demo" && (
+                    <span className="ml-auto text-xs font-medium text-teal-700 bg-teal-200 px-2 py-0.5 rounded-full">
+                      Selected
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
+            <p className="text-xs text-slate-500 leading-relaxed">
+              Load pre-built synthetic data for{" "}
+              <span className="font-medium text-teal-700">{getDemoMeta(demoVertical).company}</span>
+              {" "}— {getDemoMeta(demoVertical).users} employees, {getDemoMeta(demoVertical).tools} AI tools
+              spanning LOW to CRITICAL risk, scoped to {VERTICAL_DEFINITIONS[demoVertical].label} compliance frameworks.
+            </p>
+          </button>
+        )}
       </div>
 
       {/* Credential form */}
@@ -158,6 +215,9 @@ export default function IdPPanel({ onConnected }: IdPPanelProps) {
           {selected === "microsoft" && <MicrosoftForm loading={loading} error={error} onConnect={connect} />}
           {selected === "okta"      && <OktaForm      loading={loading} error={error} onConnect={connect} />}
           {selected === "manual"    && <ManualForm    loading={loading} error={error} onConnect={connect} />}
+          {selected === "demo" && demoVertical && (
+            <DemoForm vertical={demoVertical} onLoad={loadDemo} />
+          )}
         </>
       )}
 
@@ -375,6 +435,54 @@ function ManualForm({ loading, error, onConnect }: FormProps) {
       </div>
       <FormFooter loading={loading} error={error} label="Upload & Process" />
     </form>
+  );
+}
+
+// ─── Demo Mode form ───────────────────────────────────────────────────────────
+
+function DemoForm({ vertical, onLoad }: { vertical: IndustryVertical; onLoad: () => void }) {
+  const meta = getDemoMeta(vertical);
+  const def  = VERTICAL_DEFINITIONS[vertical];
+  return (
+    <div className="bg-teal-50 border border-teal-200 rounded-xl p-5 space-y-4">
+      <div className="flex items-start gap-3">
+        <span className="text-2xl shrink-0 mt-0.5">{def.icon}</span>
+        <div>
+          <h3 className="text-sm font-semibold text-teal-800">Demo Dataset — {def.label}</h3>
+          <p className="text-xs text-teal-700 mt-0.5">{meta.company}</p>
+        </div>
+      </div>
+      <p className="text-xs text-teal-700 leading-relaxed">
+        This demo loads {meta.users} synthetic employees and {meta.tools} AI tools — ranging from LOW to
+        CRITICAL risk — calibrated to trigger{" "}
+        <span className="font-semibold">{def.defaultFrameworks.join(", ")}</span> compliance findings
+        when scanned. No real credentials are used or stored.
+      </p>
+      <div className="grid grid-cols-3 gap-2 text-center">
+        <div className="bg-white rounded-lg border border-teal-200 py-2 px-1">
+          <p className="text-lg font-bold text-teal-700">{meta.users}</p>
+          <p className="text-xs text-teal-500">employees</p>
+        </div>
+        <div className="bg-white rounded-lg border border-teal-200 py-2 px-1">
+          <p className="text-lg font-bold text-teal-700">{meta.tools}</p>
+          <p className="text-xs text-teal-500">AI tools</p>
+        </div>
+        <div className="bg-white rounded-lg border border-teal-200 py-2 px-1">
+          <p className="text-lg font-bold text-teal-700">{def.defaultFrameworks.length}</p>
+          <p className="text-xs text-teal-500">frameworks</p>
+        </div>
+      </div>
+      <button
+        type="button"
+        onClick={onLoad}
+        className="w-full bg-teal-600 hover:bg-teal-500 text-white text-sm font-semibold rounded-lg px-4 py-2.5 transition-colors"
+      >
+        Load {def.label} Demo Data
+      </button>
+      <p className="text-xs text-teal-500 text-center">
+        Synthetic data only — safe to share in any demo or sales context
+      </p>
+    </div>
   );
 }
 
