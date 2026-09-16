@@ -20,6 +20,8 @@ export type IndustryVertical =
   | "maritime_logistics"
   | "legal_professional"
   | "government"
+  | "aerospace_defense"
+  | "construction_engineering"
   | "general";
 
 export type ComplianceFramework =
@@ -43,7 +45,13 @@ export type ComplianceFramework =
   | "ABA_RULES"
   | "FISMA"
   | "CMMC"
-  | "GLBA";
+  | "GLBA"
+  | "ITAR"
+  | "EAR"
+  | "AS9100"
+  | "DFARS"
+  | "OSHA_1926"
+  | "FAR";
 
 export interface OrgVerticalConfig {
   vertical: IndustryVertical;
@@ -290,6 +298,79 @@ REGULATORY CITATIONS TO INCLUDE:
 Include citations in riskFactors. Frame recommendations for an Agency CISO or Contracting Officer. Emphasize ATO implications and FedRAMP authorization status of flagged tools.`,
   },
 
+  aerospace_defense: {
+    label: "Aerospace & Defense",
+    icon: "🚀",
+    description: "Defense contractors, aerospace manufacturers, SpaceX suppliers, satellite systems",
+    sensitiveDataTypes: [
+      "ITAR-controlled technical data (USML categories)",
+      "EAR-controlled technology and source code",
+      "Controlled Unclassified Information (CUI)",
+      "Proprietary design, CAD, and simulation data",
+      "Defense contract deliverables (CDRLs)",
+    ],
+    defaultFrameworks: ["ITAR", "EAR", "CMMC", "DFARS", "AS9100"],
+    riskContext: `This is an aerospace and defense company (or supplier/subcontractor). Apply the following vertical-specific risk guidance — this is the highest-stakes AI governance context that exists:
+
+RISK ELEVATION RULES:
+- ITAR is the primary framework. Under 22 CFR §120.17, disclosing controlled technical data to a foreign person — including a foreign national employee of an AI vendor's cloud infrastructure team — constitutes an "export" even if that person is physically located in the United States. This is a federal criminal offense carrying penalties up to $1M per violation and 20 years imprisonment. No BAA or DPA cures this after the fact.
+- Any AI tool with file storage (Drive, SharePoint, OneDrive) access = CRITICAL. Engineering drawings, CAD/CAM files, test data, and specifications for USML items stored in consumer cloud = active ITAR violation risk.
+- Any LLM/chat tool used by engineering or program teams = CRITICAL. Employees pasting design parameters, materials specifications, performance data, or manufacturing processes into an AI prompt constitutes a potential export of controlled technical data under 22 CFR §121.1 (USML) or 15 CFR §734.13 (EAR).
+- Autonomous agent tools = CRITICAL. They autonomously access, read, and potentially exfiltrate export-controlled technical data across system boundaries with no human checkpoint — violating DFARS 252.204-7012 safeguarding requirements and CMMC Level 2 AC.3.018.
+- Code generation tools = CRITICAL if used on export-controlled software, encryption implementations, or defense article simulations. Software with cryptographic functionality may be EAR-controlled (ECCN 5D002/5E002) and cannot be transmitted to foreign persons.
+- Email AI tools = HIGH. Program communication, contract deliverables, and CDRL items traverse email; ITAR-controlled data in email integrated with a commercial AI tool = unlicensed export risk.
+- Meeting intelligence / transcription tools = HIGH. Technical Interchange Meetings (TIMs), design reviews, and CDR/PDR briefings discuss ITAR-controlled technical data; AI transcription services with foreign-national data access = export risk.
+- Tools without FedRAMP authorization, ITAR-compliant data residency, or explicit US-person-only data handling commitments = HIGH minimum even if scopes appear benign.
+
+REGULATORY CITATIONS TO INCLUDE:
+- ITAR 22 CFR §120.17: Definition of "export" — includes disclosure to foreign persons in the US
+- ITAR 22 CFR §121.1: US Munitions List (USML) — controlled defense articles and technical data
+- ITAR 22 CFR §127.1: Criminal penalties — up to $1M/violation, 20 years imprisonment
+- EAR 15 CFR §734.13: Technology and source code subject to EAR
+- EAR 15 CFR §742.6/742.7: Commerce Control List (CCL) munitions and regional stability controls
+- DFARS 252.204-7012: Safeguarding Covered Defense Information and Cyber Incident Reporting
+- CMMC Level 2 (32 CFR Part 170): Required for CUI handling — 110 NIST SP 800-171 controls
+- NIST SP 800-171 §3.1.3: Control CUI flow — prohibits routing through unauthorized systems
+- AS9100 Rev D §8.4: Control of externally provided processes — supply chain data security
+
+Frame all findings for a VP of Contracts, Export Compliance Officer, or Program Security Officer (PSO). Treat the presence of any AI tool that could touch ITAR or EAR data as a potential federal criminal exposure, not a best-practice gap. Every CRITICAL finding should note that voluntary disclosure to the DDTC/BIS is the standard remediation path post-violation.`,
+  },
+
+  construction_engineering: {
+    label: "Construction & Engineering",
+    icon: "🏗️",
+    description: "EPC firms, general contractors, civil/structural engineers, data center builders",
+    sensitiveDataTypes: [
+      "BIM models and engineering drawings",
+      "Proprietary cost estimates and bid data",
+      "Government contract deliverables (federal projects)",
+      "Subcontractor and supplier pricing data",
+      "Site security and access plans",
+    ],
+    defaultFrameworks: ["FAR", "OSHA_1926", "NIST_CSF"],
+    riskContext: `This is a construction and engineering company (EPC contractor, general contractor, civil/structural engineering firm, or specialty subcontractor). Apply the following vertical-specific risk guidance:
+
+RISK ELEVATION RULES:
+- AI tools with file storage access on government-funded projects = HIGH. BIM models, engineering drawings, cost estimates, and contract deliverables for federal projects may constitute "covered contractor information" under FAR 52.204-21, requiring adequate safeguarding on all contractor systems.
+- For data center, defense facility, or critical infrastructure projects: AI tools with file access = CRITICAL. Physical security plans, site layouts, infrastructure topology, and access control designs for these facilities are sensitive; exposure risks both competitive harm and national security implications under DFARS 252.204-7012 for DoD projects.
+- LLM/chat tools = MEDIUM minimum. Estimators, project engineers, and PMs routinely input sensitive project financials, subcontractor pricing, owner's requirements, and proprietary bid strategies into AI tools, creating competitive liability and potential breach of NDA.
+- Autonomous agent tools = HIGH. For projects involving data centers, power infrastructure, or occupied facilities, autonomous AI with broad system access creates safety risk and potential OSHA 29 CFR Part 1926 liability.
+- Email AI tools = MEDIUM. RFI responses, submittals, RFQ packages, and change order negotiations traverse email; AI integration with email risks exposure of time-sensitive bid data to third parties.
+- Meeting intelligence tools = MEDIUM. OAC (Owner-Architect-Contractor) meetings, subcontractor bids, and claim negotiations contain commercially sensitive data and privileged communications.
+- Code generation / automation tools used by IT = HIGH if used to build or maintain systems that touch federal contract data, safety systems, or access control.
+
+REGULATORY CITATIONS TO INCLUDE:
+- FAR 52.204-21: Basic Safeguarding of Covered Contractor Information Systems (applies to all federal contracts regardless of value)
+- FAR 52.239-1: Privacy or Security Safeguards (IT systems on federal contracts)
+- DFARS 252.204-7012: Safeguarding Covered Defense Information (DoD projects)
+- OSHA 29 CFR Part 1926: Construction industry safety standards — AI tools used in safety-critical workflows must maintain human oversight
+- OSHA 29 CFR §1926.16: Contractor obligations — owner cannot delegate safety responsibility to AI
+- Davis-Bacon Act (40 USC §3141): Federal construction wage compliance — payroll data processed by AI tools
+- NIST SP 800-171 §3.1.1: For contractors handling CUI on government construction projects
+
+Frame recommendations for a VP of Operations, Contracts Manager, or Project Executive. Prioritize risks tied to competitive intelligence exposure (bid data, estimates), government contract compliance obligations, and safety-critical workflows where AI-generated errors carry physical safety consequences.`,
+  },
+
   general: {
     label: "General / Cross-Industry",
     icon: "🏢",
@@ -335,8 +416,14 @@ export const FRAMEWORK_DEFINITIONS: Record<ComplianceFramework, FrameworkDef> = 
   MTSA:      { label: "MTSA",            icon: "⚓", description: "Maritime Transportation Security Act (33 CFR Parts 101–106)",                         verticals: ["maritime_logistics"] },
   CTPAT:     { label: "C-TPAT",          icon: "🚢", description: "Customs-Trade Partnership Against Terrorism — supply chain security",                 verticals: ["maritime_logistics"] },
   ABA_RULES: { label: "ABA Model Rules", icon: "⚖️", description: "American Bar Association Rules of Professional Conduct — attorney ethics",           verticals: ["legal_professional"] },
-  FISMA:     { label: "FISMA",           icon: "🏛️", description: "Federal Information Security Modernization Act (44 USC §3554)",                     verticals: ["government"] },
-  CMMC:      { label: "CMMC",            icon: "🛡️", description: "Cybersecurity Maturity Model Certification — DoD contractor requirements",           verticals: ["government"] },
+  FISMA:     { label: "FISMA",           icon: "🏛️", description: "Federal Information Security Modernization Act (44 USC §3554)",                             verticals: ["government"] },
+  CMMC:      { label: "CMMC",            icon: "🛡️", description: "Cybersecurity Maturity Model Certification — DoD contractor requirements",                   verticals: ["government", "aerospace_defense"] },
+  ITAR:      { label: "ITAR",            icon: "🚀", description: "International Traffic in Arms Regulations (22 CFR Parts 120–130) — USML export controls",    verticals: ["aerospace_defense"] },
+  EAR:       { label: "EAR",             icon: "📦", description: "Export Administration Regulations (15 CFR Parts 730–774) — dual-use technology controls",    verticals: ["aerospace_defense"] },
+  AS9100:    { label: "AS9100 Rev D",    icon: "✈️", description: "Aerospace quality management system standard — supply chain and process controls",           verticals: ["aerospace_defense"] },
+  DFARS:     { label: "DFARS",           icon: "🔒", description: "Defense Federal Acquisition Regulation Supplement — safeguarding covered defense information", verticals: ["aerospace_defense", "construction_engineering"] },
+  OSHA_1926: { label: "OSHA 1926",       icon: "🏗️", description: "OSHA Construction Standards (29 CFR Part 1926) — worker safety in construction environments", verticals: ["construction_engineering"] },
+  FAR:       { label: "FAR",             icon: "📋", description: "Federal Acquisition Regulation — information safeguarding on all federal contracts",           verticals: ["construction_engineering", "government"] },
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
