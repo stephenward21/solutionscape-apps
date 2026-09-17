@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import PolicyPanel from "./PolicyPanel";
@@ -42,6 +42,16 @@ export default function Dashboard() {
   const [activeProvider, setActiveProvider]   = useState<IdPProvider | undefined>();
   const [activeCredentials, setActiveCredentials] = useState<Record<string, string> | undefined>();
 
+  // On macOS Electron the traffic-light buttons (close/minimize/expand) overlay
+  // the top-left of the window. Push the header logo right to avoid the overlap.
+  const [macElectronPadding, setMacElectronPadding] = useState(false);
+  useEffect(() => {
+    if (typeof window !== "undefined" && window.electronAPI) {
+      // navigator.platform is deprecated but reliable for this check
+      setMacElectronPadding(navigator.platform.startsWith("Mac"));
+    }
+  }, []);
+
   function switchMode(m: Mode) {
     setMode(m);
     router.replace(`/dashboard?tab=${m === "basic" ? "discovery" : fullTab}`, { scroll: false });
@@ -60,7 +70,7 @@ export default function Dashboard() {
       {/* Header */}
       <header className="bg-white border-b border-slate-200 sticky top-0 z-20">
         <div className="max-w-7xl mx-auto px-4 sm:px-6">
-          <div className="flex items-center h-16 gap-3">
+          <div className={`flex items-center h-16 gap-3 ${macElectronPadding ? "pl-20" : ""}`}>
             {/* SolutionScape hex logo mark */}
             <svg width="36" height="36" viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg" className="shrink-0">
               <defs>

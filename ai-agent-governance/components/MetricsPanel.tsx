@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import Link from "next/link";
 import {
   ResponsiveContainer,
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
@@ -245,6 +246,9 @@ export default function MetricsPanel({ currentReport }: MetricsPanelProps) {
       {/* Header */}
       <div className="flex items-start justify-between">
         <div>
+          <Link href="/dashboard" className="inline-flex items-center gap-1.5 text-xs text-slate-400 hover:text-slate-600 transition-colors mb-2">
+            ← Back to Dashboard
+          </Link>
           <h2 className="text-lg font-semibold text-slate-800">AI Risk Metrics</h2>
           <p className="text-xs text-slate-400 mt-0.5">
             {summaries.length > 0
