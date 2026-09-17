@@ -68,11 +68,11 @@ export default function Dashboard() {
   return (
     <div className="min-h-screen bg-slate-50">
       {/* Header */}
-      <header className="bg-white border-b border-slate-200 sticky top-0 z-20">
+      <header className="bg-white border-b border-slate-200 sticky top-0 z-20" style={macElectronPadding ? { WebkitAppRegion: "drag" } as React.CSSProperties : undefined}>
         <div className="max-w-7xl mx-auto px-4 sm:px-6">
           <div className={`flex items-center h-16 gap-3 ${macElectronPadding ? "pl-20" : ""}`}>
             {/* SolutionScape hex logo mark */}
-            <svg width="36" height="36" viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg" className="shrink-0">
+            <svg width="36" height="36" viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg" className="shrink-0" style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}>
               <defs>
                 <linearGradient id="ss-grad" x1="0" y1="0" x2="36" y2="36" gradientUnits="userSpaceOnUse">
                   <stop offset="0%" stopColor="#2A8EC5" />
@@ -88,12 +88,12 @@ export default function Dashboard() {
               <line x1="13" y1="18" x2="22" y2="23" stroke="white" strokeWidth="1.5" strokeOpacity="0.75" strokeLinecap="round" />
               <line x1="22" y1="13" x2="22" y2="23" stroke="white" strokeWidth="1.5" strokeOpacity="0.75" strokeLinecap="round" />
             </svg>
-            <div>
+            <div style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}>
               <div className="font-bold text-slate-900 leading-tight tracking-tight">SolutionScape</div>
               <div className="text-xs text-slate-400 font-medium">AI Agent Governance</div>
             </div>
 
-            <div className="ml-auto flex items-center gap-1">
+            <div className="ml-auto flex items-center gap-1" style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}>
               <Link
                 href="/metrics"
                 title="Metrics"
