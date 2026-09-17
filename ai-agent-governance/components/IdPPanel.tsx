@@ -6,6 +6,7 @@ import type { IndustryVertical } from "@/lib/verticals";
 import { VERTICAL_DEFINITIONS } from "@/lib/verticals";
 import { loadOrgConfig } from "@/components/VerticalConfigPanel";
 import { getDemoUsers, getDemoMeta } from "@/lib/demo-data";
+import IdPSetupDrawer from "@/components/IdPSetupDrawer";
 
 const GoogleIcon = () => (
   <svg viewBox="0 0 24 24" width="28" height="28" xmlns="http://www.w3.org/2000/svg">
@@ -90,6 +91,8 @@ export default function IdPPanel({ onConnected }: IdPPanelProps) {
   const [error, setError]               = useState<string | null>(null);
   const [connected, setConnected]       = useState(false);
   const [demoVertical, setDemoVertical] = useState<IndustryVertical | null>(null);
+  const [drawerOpen, setDrawerOpen]     = useState(false);
+  const [drawerProvider, setDrawerProvider] = useState<"google" | "microsoft" | "okta">("google");
 
   useEffect(() => {
     const cfg = loadOrgConfig();
@@ -103,6 +106,14 @@ export default function IdPPanel({ onConnected }: IdPPanelProps) {
     setError(null);
     setConnected(false);
     setActivity([]);
+    if (provider && provider !== "demo" && provider !== "manual") {
+      setDrawerProvider(provider);
+    }
+  }
+
+  function openGuide(provider?: "google" | "microsoft" | "okta") {
+    if (provider) setDrawerProvider(provider);
+    setDrawerOpen(true);
   }
 
   function loadDemo() {
@@ -136,13 +147,32 @@ export default function IdPPanel({ onConnected }: IdPPanelProps) {
   }
 
   return (
+    <>
+    <IdPSetupDrawer
+      open={drawerOpen}
+      initialProvider={drawerProvider}
+      onClose={() => setDrawerOpen(false)}
+    />
     <div className="space-y-6">
-      <div>
-        <h2 className="text-lg font-semibold text-slate-800 mb-1">Directory Connection</h2>
-        <p className="text-sm text-slate-500">
-          Connect your identity provider to detect which AI tools your users have authorized
-          and what systems those tools can access.
-        </p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h2 className="text-lg font-semibold text-slate-800 mb-1">Directory Connection</h2>
+          <p className="text-sm text-slate-500">
+            Connect your identity provider to detect which AI tools your users have authorized
+            and what systems those tools can access.
+          </p>
+        </div>
+        <button
+          onClick={() => openGuide(
+            selected && selected !== "demo" && selected !== "manual" ? selected : "google"
+          )}
+          className="shrink-0 flex items-center gap-1.5 text-xs font-medium text-brand-600 hover:text-brand-700 bg-brand-50 hover:bg-brand-100 border border-brand-200 rounded-lg px-3 py-1.5 transition-colors"
+        >
+          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+          </svg>
+          Setup guide
+        </button>
       </div>
 
       {/* Provider grid */}
@@ -211,9 +241,9 @@ export default function IdPPanel({ onConnected }: IdPPanelProps) {
       {/* Credential form */}
       {selected && !connected && (
         <>
-          {selected === "google"    && <GoogleForm    loading={loading} error={error} onConnect={connect} />}
-          {selected === "microsoft" && <MicrosoftForm loading={loading} error={error} onConnect={connect} />}
-          {selected === "okta"      && <OktaForm      loading={loading} error={error} onConnect={connect} />}
+          {selected === "google"    && <GoogleForm    loading={loading} error={error} onConnect={connect} onGuide={() => openGuide("google")} />}
+          {selected === "microsoft" && <MicrosoftForm loading={loading} error={error} onConnect={connect} onGuide={() => openGuide("microsoft")} />}
+          {selected === "okta"      && <OktaForm      loading={loading} error={error} onConnect={connect} onGuide={() => openGuide("okta")} />}
           {selected === "manual"    && <ManualForm    loading={loading} error={error} onConnect={connect} />}
           {selected === "demo" && demoVertical && (
             <DemoForm vertical={demoVertical} onLoad={loadDemo} />
@@ -229,12 +259,13 @@ export default function IdPPanel({ onConnected }: IdPPanelProps) {
         />
       )}
     </div>
+    </>
   );
 }
 
 // ─── Google Workspace form ────────────────────────────────────────────────────
 
-function GoogleForm({ loading, error, onConnect }: FormProps) {
+function GoogleForm({ loading, error, onConnect, onGuide }: FormProps) {
   const [serviceAccountJson, setServiceAccountJson] = useState("");
   const [adminEmail, setAdminEmail] = useState("");
 
@@ -247,10 +278,13 @@ function GoogleForm({ loading, error, onConnect }: FormProps) {
 
   return (
     <form onSubmit={submit} className="bg-white border border-slate-200 rounded-xl p-5 space-y-4">
-      <h3 className="text-sm font-semibold text-slate-700">Google Workspace — Service Account</h3>
+      <div className="flex items-start justify-between gap-2">
+        <h3 className="text-sm font-semibold text-slate-700">Google Workspace — Service Account</h3>
+        {onGuide && <GuideLink onClick={onGuide} />}
+      </div>
       <p className="text-xs text-slate-400 leading-relaxed">
-        Paste the contents of your service account JSON key file. See the README for how to create
-        one with domain-wide delegation and the required Admin SDK scopes.
+        Paste the contents of your service account JSON key file. The setup guide walks through
+        creating one with domain-wide delegation and the required Admin SDK scopes.
       </p>
 
       <div>
@@ -291,7 +325,7 @@ function GoogleForm({ loading, error, onConnect }: FormProps) {
 
 // ─── Microsoft Entra form ─────────────────────────────────────────────────────
 
-function MicrosoftForm({ loading, error, onConnect }: FormProps) {
+function MicrosoftForm({ loading, error, onConnect, onGuide }: FormProps) {
   const [tenantId, setTenantId]         = useState("");
   const [clientId, setClientId]         = useState("");
   const [clientSecret, setClientSecret] = useState("");
@@ -303,11 +337,14 @@ function MicrosoftForm({ loading, error, onConnect }: FormProps) {
 
   return (
     <form onSubmit={submit} className="bg-white border border-slate-200 rounded-xl p-5 space-y-4">
-      <h3 className="text-sm font-semibold text-slate-700">Microsoft Entra ID — App Registration</h3>
+      <div className="flex items-start justify-between gap-2">
+        <h3 className="text-sm font-semibold text-slate-700">Microsoft Entra ID — App Registration</h3>
+        {onGuide && <GuideLink onClick={onGuide} />}
+      </div>
       <p className="text-xs text-slate-400 leading-relaxed">
         Create an app registration in the Azure portal with <code className="bg-slate-100 px-1 rounded">AuditLog.Read.All</code>,{" "}
         <code className="bg-slate-100 px-1 rounded">Directory.Read.All</code>, and{" "}
-        <code className="bg-slate-100 px-1 rounded">Application.Read.All</code> permissions. See the README for full steps.
+        <code className="bg-slate-100 px-1 rounded">Application.Read.All</code> permissions. The setup guide has full steps.
       </p>
 
       <div>
@@ -359,7 +396,7 @@ function MicrosoftForm({ loading, error, onConnect }: FormProps) {
 
 // ─── Okta form ────────────────────────────────────────────────────────────────
 
-function OktaForm({ loading, error, onConnect }: FormProps) {
+function OktaForm({ loading, error, onConnect, onGuide }: FormProps) {
   const [domain, setDomain]     = useState("");
   const [apiToken, setApiToken] = useState("");
 
@@ -370,10 +407,13 @@ function OktaForm({ loading, error, onConnect }: FormProps) {
 
   return (
     <form onSubmit={submit} className="bg-white border border-slate-200 rounded-xl p-5 space-y-4">
-      <h3 className="text-sm font-semibold text-slate-700">Okta — API Token</h3>
+      <div className="flex items-start justify-between gap-2">
+        <h3 className="text-sm font-semibold text-slate-700">Okta — API Token</h3>
+        {onGuide && <GuideLink onClick={onGuide} />}
+      </div>
       <p className="text-xs text-slate-400 leading-relaxed">
         Generate an API token in <strong>Security → API → Tokens</strong>. A Read-Only Administrator
-        token is sufficient. See the README for the recommended setup using a service account.
+        token is sufficient. The setup guide covers the recommended service account setup.
       </p>
 
       <div>
@@ -486,12 +526,30 @@ function DemoForm({ vertical, onLoad }: { vertical: IndustryVertical; onLoad: ()
   );
 }
 
+// ─── Guide link button ────────────────────────────────────────────────────────
+
+function GuideLink({ onClick }: { onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="shrink-0 flex items-center gap-1 text-xs text-brand-600 hover:text-brand-700 font-medium whitespace-nowrap"
+    >
+      <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+      </svg>
+      Setup guide
+    </button>
+  );
+}
+
 // ─── Shared form footer ───────────────────────────────────────────────────────
 
 interface FormProps {
   loading: boolean;
   error: string | null;
   onConnect: (creds: Creds) => void;
+  onGuide?: () => void;
 }
 
 function FormFooter({ loading, error, label }: { loading: boolean; error: string | null; label: string }) {
