@@ -6,8 +6,6 @@ import type { OrgVerticalConfig } from "@/lib/verticals";
 import { loadOrgConfig } from "./VerticalConfigPanel";
 import { saveScanReport } from "@/lib/scan-history";
 import { VERTICAL_DEFINITIONS } from "@/lib/verticals";
-import NotificationsPanel from "./NotificationsPanel";
-import RevokePanel from "./RevokePanel";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -20,8 +18,20 @@ const RISK_CONFIG: Record<AIRiskLevel, { label: string; badge: string; bar: stri
 
 const RISK_ORDER: Record<AIRiskLevel, number> = { CRITICAL: 4, HIGH: 3, MEDIUM: 2, LOW: 1 };
 
-type ReportTab = "summary" | "apps" | "users";
-type SortCol  = "risk" | "tool" | "users" | "score";
+type ReportTab   = "summary" | "apps" | "users";
+type SortCol     = "risk" | "tool" | "users" | "score";
+type NotifyCh    = "email" | "slack" | "teams";
+type RevokeState = "idle" | "confirming" | "revoking" | "revoked" | "error";
+
+interface NotifyConfig {
+  channel: NotifyCh;
+  // email
+  smtpHost?: string; smtpPort?: string; smtpUser?: string; smtpPass?: string;
+  fromEmail?: string; fromName?: string;
+  // slack / teams
+  webhookUrl?: string; teamsWebhookUrl?: string;
+  orgName?: string; adminContact?: string;
+}
 
 const PAGE_SIZE = 50;
 
@@ -52,6 +62,10 @@ export default function BasicScanPanel({ idpUsers, provider, credentials }: Basi
   const [userSearch, setUserSearch] = useState("");
   const [userPage, setUserPage]     = useState(0);
   const [expandedUser, setExpandedUser] = useState<string | null>(null);
+
+  // Shared notification config (org-level channel, reused across all user notify actions)
+  const [notifyConfig, setNotifyConfig] = useState<NotifyConfig>({ channel: "email" });
+  const [notifyConfigOpen, setNotifyConfigOpen] = useState(false);
 
   useEffect(() => { setOrgConfig(loadOrgConfig()); }, []);
 
@@ -325,14 +339,18 @@ export default function BasicScanPanel({ idpUsers, provider, credentials }: Basi
             </div>
           </div>
 
-          {/* Take Action */}
+          {/* Prompt to Users tab for per-user actions */}
           {(report.criticalTools > 0 || report.highRiskTools > 0) && (
-            <div className="space-y-3 pt-1">
-              <Divider label="Take Action" />
-              <NotificationsPanel report={report} idpUsers={idpUsers} />
-              {provider && credentials && provider !== "manual" && (
-                <RevokePanel idpUsers={idpUsers} provider={provider} credentials={credentials} />
-              )}
+            <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 flex items-center justify-between gap-3">
+              <p className="text-xs text-amber-800">
+                <span className="font-semibold">{report.criticalTools + report.highRiskTools} users</span> have critical or high-risk AI tools. Revoke access or send notifications from the Users tab.
+              </p>
+              <button
+                onClick={() => setTab("users")}
+                className="text-xs font-semibold text-amber-700 border border-amber-300 bg-white hover:bg-amber-50 px-3 py-1.5 rounded-lg whitespace-nowrap transition-colors"
+              >
+                View Users →
+              </button>
             </div>
           )}
         </div>
@@ -455,7 +473,8 @@ export default function BasicScanPanel({ idpUsers, provider, credentials }: Basi
       {/* ── Tab: Users ── */}
       {tab === "users" && (
         <div className="space-y-3">
-          <div className="flex items-center gap-3">
+          {/* Search + notify config toggle */}
+          <div className="flex flex-wrap items-center gap-2">
             <input
               type="text"
               placeholder="Search by name, email, or department…"
@@ -464,7 +483,18 @@ export default function BasicScanPanel({ idpUsers, provider, credentials }: Basi
               className="text-xs border border-slate-200 rounded-lg px-3 py-1.5 bg-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-500 w-72"
             />
             <span className="text-xs text-slate-400">{filteredUsers.length} users with AI activity</span>
+            <button
+              onClick={() => setNotifyConfigOpen((o) => !o)}
+              className="ml-auto text-xs border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5"
+            >
+              ✉ Notification settings {notifyConfigOpen ? "▲" : "▼"}
+            </button>
           </div>
+
+          {/* Notification channel config (shared across all user notify actions) */}
+          {notifyConfigOpen && (
+            <NotifyConfigPanel config={notifyConfig} onChange={setNotifyConfig} />
+          )}
 
           <div className="border border-slate-200 rounded-xl overflow-hidden bg-white">
             <table className="w-full text-sm">
@@ -524,7 +554,13 @@ export default function BasicScanPanel({ idpUsers, provider, credentials }: Basi
                       {isExpanded && (
                         <tr key={`${u.userId}-detail`} className="bg-slate-50">
                           <td colSpan={6} className="px-6 py-4">
-                            <UserDetail user={u} profileByTool={profileByTool} />
+                            <UserDetail
+                              user={u}
+                              profileByTool={profileByTool}
+                              provider={provider}
+                              credentials={credentials}
+                              notifyConfig={notifyConfig}
+                            />
                           </td>
                         </tr>
                       )}
@@ -651,13 +687,105 @@ function AppDetail({ profile }: { profile: AIToolProfile }) {
   );
 }
 
-function UserDetail({ user, profileByTool }: {
-  user: UserActivity & { tools: (UserActivity["aiToolsDetected"][0] & { riskLevel: AIRiskLevel; riskScore: number })[] };
+type EnrichedUser = UserActivity & {
+  tools: (UserActivity["aiToolsDetected"][0] & { riskLevel: AIRiskLevel; riskScore: number })[];
+  highestRisk: AIRiskLevel;
+};
+
+function UserDetail({ user, profileByTool, provider, credentials, notifyConfig }: {
+  user: EnrichedUser;
   profileByTool: Map<string, AIToolProfile>;
+  provider?: IdPProvider;
+  credentials?: Record<string, string>;
+  notifyConfig: NotifyConfig;
 }) {
+  const [revokeStates, setRevokeStates] = useState<Record<string, RevokeState>>({});
+  const [revokeErrors, setRevokeErrors] = useState<Record<string, string>>({});
+  const [notifySending, setNotifySending] = useState(false);
+  const [notifyResult, setNotifyResult] = useState<{ ok: boolean; msg: string } | null>(null);
+
+  const canRevoke = !!provider && !!credentials && provider !== "manual";
+
+  function setRevoke(key: string, state: RevokeState) {
+    setRevokeStates((p) => ({ ...p, [key]: state }));
+  }
+
+  async function doRevoke(t: EnrichedUser["tools"][0]) {
+    if (!canRevoke || !t.clientId) return;
+    const key = `${user.userId}::${t.clientId}`;
+    setRevoke(key, "revoking");
+    try {
+      const res = await fetch("/api/idp/revoke", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          provider,
+          credentials,
+          userEmail: user.email,
+          clientId: t.clientId,
+          idpItemId: t.idpItemId,
+          toolName: t.tool,
+        }),
+      });
+      const data = await res.json() as { success?: boolean; error?: string };
+      if (data.success) {
+        setRevoke(key, "revoked");
+      } else {
+        setRevokeErrors((p) => ({ ...p, [key]: data.error ?? "Unknown error" }));
+        setRevoke(key, "error");
+      }
+    } catch (e) {
+      setRevokeErrors((p) => ({ ...p, [key]: e instanceof Error ? e.message : String(e) }));
+      setRevoke(key, "error");
+    }
+  }
+
+  async function doNotify() {
+    setNotifySending(true);
+    setNotifyResult(null);
+    try {
+      const tools = user.tools.map((t) => ({
+        tool: t.tool, vendor: t.vendor,
+        riskLevel: t.riskLevel, riskScore: t.riskScore,
+      }));
+      const res = await fetch("/api/notify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          channel: notifyConfig.channel,
+          config: {
+            webhookUrl: notifyConfig.webhookUrl,
+            teamsWebhookUrl: notifyConfig.teamsWebhookUrl,
+            smtpHost: notifyConfig.smtpHost,
+            smtpPort: notifyConfig.smtpPort ? parseInt(notifyConfig.smtpPort) : undefined,
+            smtpUser: notifyConfig.smtpUser,
+            smtpPass: notifyConfig.smtpPass,
+            fromEmail: notifyConfig.fromEmail,
+            fromName: notifyConfig.fromName,
+            orgName: notifyConfig.orgName,
+            adminContact: notifyConfig.adminContact,
+          },
+          notifications: [{ userEmail: user.email, displayName: user.displayName, tools }],
+        }),
+      });
+      const data = await res.json() as { sent?: number; error?: string };
+      if (res.ok && !data.error) {
+        setNotifyResult({ ok: true, msg: "Notification sent." });
+      } else {
+        setNotifyResult({ ok: false, msg: data.error ?? "Send failed." });
+      }
+    } catch (e) {
+      setNotifyResult({ ok: false, msg: e instanceof Error ? e.message : String(e) });
+    } finally {
+      setNotifySending(false);
+    }
+  }
+
+  const sortedTools = [...user.tools].sort((a, b) => RISK_ORDER[b.riskLevel] - RISK_ORDER[a.riskLevel]);
+
   return (
-    <div className="space-y-2">
-      <p className="text-xs font-semibold text-slate-600">AI Tools Used by {user.displayName ?? user.email}</p>
+    <div className="space-y-4">
+      {/* Tool table with inline revoke */}
       <table className="w-full text-xs">
         <thead>
           <tr className="text-slate-500 border-b border-slate-200">
@@ -666,28 +794,139 @@ function UserDetail({ user, profileByTool }: {
             <th className="pb-1.5 text-left font-medium hidden sm:table-cell">Category</th>
             <th className="pb-1.5 text-left font-medium hidden sm:table-cell">Detection</th>
             <th className="pb-1.5 text-right font-medium">Score</th>
+            {canRevoke && <th className="pb-1.5 text-right font-medium">Access</th>}
           </tr>
         </thead>
         <tbody className="divide-y divide-slate-100">
-          {user.tools
-            .sort((a, b) => RISK_ORDER[b.riskLevel] - RISK_ORDER[a.riskLevel])
-            .map((t) => {
-              const cfg     = RISK_CONFIG[t.riskLevel];
-              const profile = profileByTool.get(t.tool.toLowerCase());
-              return (
-                <tr key={t.tool}>
-                  <td className="py-1.5 font-medium text-slate-700">{t.tool}</td>
-                  <td className="py-1.5">
-                    <span className={`px-1.5 py-0.5 rounded-full font-semibold ${cfg.badge}`}>{cfg.label}</span>
+          {sortedTools.map((t) => {
+            const cfg     = RISK_CONFIG[t.riskLevel];
+            const profile = profileByTool.get(t.tool.toLowerCase());
+            const rKey    = `${user.userId}::${t.clientId ?? t.tool}`;
+            const rState  = revokeStates[rKey] ?? "idle";
+            return (
+              <tr key={t.tool}>
+                <td className="py-2 font-medium text-slate-700">{t.tool}</td>
+                <td className="py-2">
+                  <span className={`px-1.5 py-0.5 rounded-full font-semibold ${cfg.badge}`}>{cfg.label}</span>
+                </td>
+                <td className="py-2 text-slate-500 hidden sm:table-cell">{profile?.category ?? "—"}</td>
+                <td className="py-2 text-slate-400 hidden sm:table-cell capitalize">{t.detectionMethod}</td>
+                <td className="py-2 text-right font-bold text-slate-600">{t.riskScore || "—"}</td>
+                {canRevoke && (
+                  <td className="py-2 text-right">
+                    {!t.clientId ? (
+                      <span className="text-slate-300">—</span>
+                    ) : rState === "idle" ? (
+                      <button
+                        onClick={() => setRevoke(rKey, "confirming")}
+                        className="text-rose-600 hover:text-rose-700 font-medium px-2 py-0.5 rounded border border-rose-200 hover:bg-rose-50 transition-colors"
+                      >
+                        Revoke
+                      </button>
+                    ) : rState === "confirming" ? (
+                      <span className="inline-flex gap-1">
+                        <button onClick={() => setRevoke(rKey, "idle")} className="text-slate-500 px-2 py-0.5 rounded border border-slate-200 hover:bg-slate-100 transition-colors">Cancel</button>
+                        <button onClick={() => void doRevoke(t)} className="text-white bg-rose-600 hover:bg-rose-700 px-2 py-0.5 rounded transition-colors font-medium">Confirm</button>
+                      </span>
+                    ) : rState === "revoking" ? (
+                      <span className="text-slate-400 flex items-center gap-1 justify-end">
+                        <svg className="animate-spin w-3 h-3" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
+                        Revoking…
+                      </span>
+                    ) : rState === "revoked" ? (
+                      <span className="text-emerald-600 font-medium">✓ Revoked</span>
+                    ) : (
+                      <span className="text-rose-600" title={revokeErrors[rKey]}>Failed</span>
+                    )}
                   </td>
-                  <td className="py-1.5 text-slate-500 hidden sm:table-cell">{profile?.category ?? "—"}</td>
-                  <td className="py-1.5 text-slate-400 hidden sm:table-cell capitalize">{t.detectionMethod}</td>
-                  <td className="py-1.5 text-right font-bold text-slate-600">{t.riskScore || "—"}</td>
-                </tr>
-              );
-            })}
+                )}
+              </tr>
+            );
+          })}
         </tbody>
       </table>
+
+      {/* Per-user notify action */}
+      <div className="flex items-center gap-3 pt-1 border-t border-slate-200">
+        <button
+          onClick={() => void doNotify()}
+          disabled={notifySending}
+          className="text-xs font-medium border border-brand-200 bg-brand-50 hover:bg-brand-100 text-brand-700 px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50 flex items-center gap-1.5"
+        >
+          {notifySending ? (
+            <><svg className="animate-spin w-3 h-3" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>Sending…</>
+          ) : `Notify ${user.displayName ?? user.email} via ${notifyConfig.channel}`}
+        </button>
+        {notifyResult && (
+          <span className={`text-xs ${notifyResult.ok ? "text-emerald-600" : "text-rose-600"}`}>
+            {notifyResult.msg}
+          </span>
+        )}
+        {!notifyResult && (
+          <span className="text-xs text-slate-400">
+            Configure notification channel using the settings above.
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function NotifyConfigPanel({ config, onChange }: {
+  config: NotifyConfig;
+  onChange: (c: NotifyConfig) => void;
+}) {
+  function set(patch: Partial<NotifyConfig>) { onChange({ ...config, ...patch }); }
+  return (
+    <div className="bg-white border border-slate-200 rounded-xl p-4 space-y-3 text-xs">
+      <p className="font-semibold text-slate-700 text-sm">Notification Channel</p>
+      <div className="flex gap-2">
+        {(["email", "slack", "teams"] as NotifyCh[]).map((ch) => (
+          <button
+            key={ch}
+            onClick={() => set({ channel: ch })}
+            className={`px-3 py-1.5 rounded-lg border transition-colors capitalize ${config.channel === ch ? "bg-brand-600 text-white border-brand-600" : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"}`}
+          >
+            {ch === "email" ? "✉ Email" : ch === "slack" ? "💬 Slack" : "🟦 Teams"}
+          </button>
+        ))}
+      </div>
+
+      {config.channel === "email" && (
+        <div className="grid grid-cols-2 gap-2">
+          <Field label="SMTP Host"   value={config.smtpHost ?? ""}     onChange={(v) => set({ smtpHost: v })} placeholder="smtp.example.com" />
+          <Field label="SMTP Port"   value={config.smtpPort ?? "587"}  onChange={(v) => set({ smtpPort: v })} placeholder="587" />
+          <Field label="SMTP User"   value={config.smtpUser ?? ""}     onChange={(v) => set({ smtpUser: v })} placeholder="user@example.com" />
+          <Field label="SMTP Pass"   value={config.smtpPass ?? ""}     onChange={(v) => set({ smtpPass: v })} placeholder="••••••••" type="password" />
+          <Field label="From Email"  value={config.fromEmail ?? ""}    onChange={(v) => set({ fromEmail: v })} placeholder="security@example.com" />
+          <Field label="From Name"   value={config.fromName ?? ""}     onChange={(v) => set({ fromName: v })} placeholder="IT Security" />
+          <Field label="Org Name"    value={config.orgName ?? ""}      onChange={(v) => set({ orgName: v })} placeholder="Acme Corp" />
+          <Field label="Admin Contact" value={config.adminContact ?? ""} onChange={(v) => set({ adminContact: v })} placeholder="it@example.com" />
+        </div>
+      )}
+      {config.channel === "slack" && (
+        <Field label="Slack Webhook URL" value={config.webhookUrl ?? ""} onChange={(v) => set({ webhookUrl: v })} placeholder="https://hooks.slack.com/services/…" />
+      )}
+      {config.channel === "teams" && (
+        <Field label="Teams Webhook URL" value={config.teamsWebhookUrl ?? ""} onChange={(v) => set({ teamsWebhookUrl: v })} placeholder="https://…webhook.office.com/…" />
+      )}
+    </div>
+  );
+}
+
+function Field({ label, value, onChange, placeholder, type = "text" }: {
+  label: string; value: string; onChange: (v: string) => void; placeholder?: string; type?: string;
+}) {
+  return (
+    <div>
+      <label className="block text-xs text-slate-500 mb-0.5">{label}</label>
+      <input
+        type={type}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        className="w-full text-xs border border-slate-200 rounded-lg px-2.5 py-1.5 bg-white placeholder-slate-300 focus:outline-none focus:ring-1 focus:ring-brand-500"
+      />
     </div>
   );
 }
@@ -718,12 +957,3 @@ function InfoRow({ done, label }: { done: boolean; label: string }) {
   );
 }
 
-function Divider({ label }: { label: string }) {
-  return (
-    <div className="flex items-center gap-2">
-      <div className="h-px flex-1 bg-slate-200" />
-      <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">{label}</span>
-      <div className="h-px flex-1 bg-slate-200" />
-    </div>
-  );
-}
