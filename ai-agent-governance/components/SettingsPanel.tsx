@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import Link from "next/link";
 import type { ReportSummary, ScheduleConfig } from "@/electron/db";
 import VerticalConfigPanel from "./VerticalConfigPanel";
 
@@ -444,6 +445,9 @@ export default function SettingsPanel() {
     return (
       <div className="space-y-5">
         <div>
+          <Link href="/" className="inline-flex items-center gap-1.5 text-xs text-slate-400 hover:text-slate-600 transition-colors mb-3">
+            ← Home
+          </Link>
           <h2 className="text-lg font-semibold text-slate-800 mb-1">Settings</h2>
           <p className="text-sm text-slate-500">
             Configure your organization profile to enable industry-specific risk analysis.
@@ -467,6 +471,9 @@ export default function SettingsPanel() {
   return (
     <div className="space-y-5">
       <div>
+        <Link href="/" className="inline-flex items-center gap-1.5 text-xs text-slate-400 hover:text-slate-600 transition-colors mb-3">
+          ← Home
+        </Link>
         <h2 className="text-lg font-semibold text-slate-800 mb-1">Settings</h2>
         <p className="text-sm text-slate-500">
           Credentials are encrypted with your OS keychain and never leave this device.
