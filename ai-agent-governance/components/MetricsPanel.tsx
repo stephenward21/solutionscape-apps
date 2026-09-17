@@ -10,6 +10,12 @@ import {
 } from "recharts";
 import type { BasicAIReport, AIRiskLevel } from "@/lib/types";
 import type { ReportSummary } from "@/electron/db";
+import {
+  listScanSummaries,
+  getScanReport,
+  clearScanHistory,
+  type StoredReportSummary,
+} from "@/lib/scan-history";
 
 // ─── Palette ──────────────────────────────────────────────────────────────────
 
@@ -98,7 +104,7 @@ function LineTooltip({ active, payload, label }: {
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export default function MetricsPanel({ currentReport }: MetricsPanelProps) {
-  const [summaries, setSummaries]         = useState<ReportSummary[]>([]);
+  const [summaries, setSummaries]         = useState<(ReportSummary | StoredReportSummary)[]>([]);
   const [latestFull, setLatestFull]       = useState<BasicAIReport | null>(null);
   const [loading, setLoading]             = useState(true);
   const [selectedScanId, setSelectedScanId] = useState<string | null>(null);
@@ -110,21 +116,35 @@ export default function MetricsPanel({ currentReport }: MetricsPanelProps) {
   // ── Load history ─────────────────────────────────────────────────────────────
 
   const loadHistory = useCallback(async () => {
-    if (!eAPI) { setLoading(false); return; }
     setLoading(true);
-    const list = await eAPI.reports.list();
-    setSummaries(list);
-    if (list.length > 0 && !currentReport) {
-      const full = await eAPI.reports.get(list[0].id);
-      setLatestFull(full);
+    if (eAPI) {
+      const list = await eAPI.reports.list();
+      setSummaries(list);
+      if (list.length > 0 && !currentReport) {
+        const full = await eAPI.reports.get(list[0].id);
+        setLatestFull(full);
+      }
+    } else {
+      const list = listScanSummaries();
+      setSummaries(list);
+      if (list.length > 0 && !currentReport) {
+        const full = getScanReport(list[0].id);
+        setLatestFull(full);
+      }
     }
     setLoading(false);
   }, [currentReport]);
 
   useEffect(() => {
     void loadHistory();
-    eAPI?.on("scan:complete", () => void loadHistory());
-    return () => eAPI?.off("scan:complete", () => void loadHistory());
+    if (eAPI) {
+      eAPI.on("scan:complete", () => void loadHistory());
+      return () => eAPI.off("scan:complete", () => void loadHistory());
+    } else {
+      const onSaved = () => void loadHistory();
+      window.addEventListener("ss:scan-saved", onSaved);
+      return () => window.removeEventListener("ss:scan-saved", onSaved);
+    }
   }, [loadHistory]);
 
   // ── Load drill-down report ────────────────────────────────────────────────────
@@ -133,8 +153,13 @@ export default function MetricsPanel({ currentReport }: MetricsPanelProps) {
     if (selectedScanId === id) { setSelectedScanId(null); setDetailReport(null); return; }
     setSelectedScanId(id);
     setLoadingDetail(true);
-    const full = await eAPI?.reports.get(id);
-    setDetailReport(full ?? null);
+    let full: BasicAIReport | null = null;
+    if (eAPI) {
+      full = await eAPI.reports.get(id) ?? null;
+    } else {
+      full = getScanReport(id);
+    }
+    setDetailReport(full);
     setLoadingDetail(false);
   }
 

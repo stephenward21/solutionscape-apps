@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import type { BasicAIReport, AIToolProfile, AIRiskLevel, UserActivity, IdPProvider } from "@/lib/types";
 import type { OrgVerticalConfig } from "@/lib/verticals";
 import { loadOrgConfig } from "./VerticalConfigPanel";
+import { saveScanReport } from "@/lib/scan-history";
 import { VERTICAL_DEFINITIONS } from "@/lib/verticals";
 import NotificationsPanel from "./NotificationsPanel";
 import RevokePanel from "./RevokePanel";
@@ -45,6 +46,11 @@ export default function BasicScanPanel({ idpUsers, provider, credentials }: Basi
       const data = await res.json() as BasicAIReport & { error?: string };
       if (!res.ok || data.error) throw new Error(data.error ?? "Scan failed");
       setReport(data);
+      // Persist to localStorage so Metrics page shows history in web context
+      if (typeof window !== "undefined" && !window.electronAPI) {
+        saveScanReport(data);
+        window.dispatchEvent(new CustomEvent("ss:scan-saved"));
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
