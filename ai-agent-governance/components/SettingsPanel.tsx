@@ -445,8 +445,8 @@ export default function SettingsPanel() {
     return (
       <div className="space-y-5">
         <div>
-          <Link href="/" className="inline-flex items-center gap-1.5 text-xs text-slate-400 hover:text-slate-600 transition-colors mb-3">
-            ← Home
+          <Link href="/dashboard" className="inline-flex items-center gap-1.5 text-xs text-slate-400 hover:text-slate-600 transition-colors mb-3">
+            ← Back to Dashboard
           </Link>
           <h2 className="text-lg font-semibold text-slate-800 mb-1">Settings</h2>
           <p className="text-sm text-slate-500">
@@ -471,8 +471,8 @@ export default function SettingsPanel() {
   return (
     <div className="space-y-5">
       <div>
-        <Link href="/" className="inline-flex items-center gap-1.5 text-xs text-slate-400 hover:text-slate-600 transition-colors mb-3">
-          ← Home
+        <Link href="/dashboard" className="inline-flex items-center gap-1.5 text-xs text-slate-400 hover:text-slate-600 transition-colors mb-3">
+          ← Back to Dashboard
         </Link>
         <h2 className="text-lg font-semibold text-slate-800 mb-1">Settings</h2>
         <p className="text-sm text-slate-500">
