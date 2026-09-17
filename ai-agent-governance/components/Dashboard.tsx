@@ -353,7 +353,7 @@ export default function Dashboard() {
             }} />
             )}
             {mode === "full" && fullTab === "report" && (
-              <ReportPanel policyResult={policyResult} idpUsers={idpUsers} />
+              <ReportPanel policyResult={policyResult} idpUsers={idpUsers} provider={activeProvider} credentials={activeCredentials} />
             )}
           </div>
         </div>
