@@ -19,8 +19,9 @@ contextBridge.exposeInMainWorld("electronAPI", {
     runNow: ()                                             => ipcRenderer.invoke("schedule:run-now"),
   },
   reports: {
-    list: ()           => ipcRenderer.invoke("reports:list"),
-    get:  (id: string) => ipcRenderer.invoke("reports:get", id),
+    list: ()                      => ipcRenderer.invoke("reports:list"),
+    get:  (id: string)            => ipcRenderer.invoke("reports:get", id),
+    save: (report: unknown)       => ipcRenderer.invoke("reports:save", report),
   },
   on:  (channel: string, fn: (...a: unknown[]) => void) => {
     const allowed = ["scan:complete", "scan:error", "schedule:updated"];

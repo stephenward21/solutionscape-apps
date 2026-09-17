@@ -19,8 +19,9 @@ interface ElectronAPI {
     runNow: () => Promise<void>;
   };
   reports: {
-    list: ()           => Promise<ReportSummary[]>;
-    get:  (id: string) => Promise<BasicAIReport | null>;
+    list: ()                     => Promise<ReportSummary[]>;
+    get:  (id: string)           => Promise<BasicAIReport | null>;
+    save: (report: BasicAIReport) => Promise<void>;
   };
   on:  (channel: "scan:complete" | "scan:error" | "schedule:updated", fn: (...a: unknown[]) => void) => void;
   off: (channel: "scan:complete" | "scan:error" | "schedule:updated", fn: (...a: unknown[]) => void) => void;

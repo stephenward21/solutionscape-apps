@@ -217,8 +217,13 @@ export default function MetricsPanel({ currentReport }: MetricsPanelProps) {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-20 text-slate-400 text-sm">
-        Loading metrics…
+      <div className="space-y-5">
+        <Link href="/dashboard" className="inline-flex items-center gap-1.5 text-xs text-slate-400 hover:text-slate-600 transition-colors">
+          ← Back to Dashboard
+        </Link>
+        <div className="flex items-center justify-center py-20 text-slate-400 text-sm">
+          Loading metrics…
+        </div>
       </div>
     );
   }
@@ -228,12 +233,17 @@ export default function MetricsPanel({ currentReport }: MetricsPanelProps) {
 
   if (!hasReport && summaries.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center py-20 text-center">
-        <p className="text-4xl mb-3">📊</p>
-        <p className="text-sm font-semibold text-slate-700 mb-1">No scan data yet</p>
-        <p className="text-xs text-slate-400 max-w-sm">
-          Run an AI Discovery scan to see metrics. Historical trends appear after two or more scans.
-        </p>
+      <div className="space-y-5">
+        <Link href="/dashboard" className="inline-flex items-center gap-1.5 text-xs text-slate-400 hover:text-slate-600 transition-colors">
+          ← Back to Dashboard
+        </Link>
+        <div className="flex flex-col items-center justify-center py-20 text-center">
+          <p className="text-4xl mb-3">📊</p>
+          <p className="text-sm font-semibold text-slate-700 mb-1">No scan data yet</p>
+          <p className="text-xs text-slate-400 max-w-sm">
+            Run an AI Discovery scan to see metrics. Historical trends appear after two or more scans.
+          </p>
+        </div>
       </div>
     );
   }

@@ -47,9 +47,14 @@ export default function BasicScanPanel({ idpUsers, provider, credentials }: Basi
       if (!res.ok || data.error) throw new Error(data.error ?? "Scan failed");
       setReport(data);
       // Persist to localStorage so Metrics page shows history in web context
-      if (typeof window !== "undefined" && !window.electronAPI) {
-        saveScanReport(data);
-        window.dispatchEvent(new CustomEvent("ss:scan-saved"));
+      if (typeof window !== "undefined") {
+        if (window.electronAPI) {
+          // Persist to SQLite via Electron IPC so Metrics page can read it
+          await window.electronAPI.reports.save(data);
+        } else {
+          saveScanReport(data);
+          window.dispatchEvent(new CustomEvent("ss:scan-saved"));
+        }
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));

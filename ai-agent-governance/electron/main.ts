@@ -199,6 +199,7 @@ function registerIpcHandlers(): void {
   // Report history
   ipcMain.handle("reports:list", () => listReports());
   ipcMain.handle("reports:get",  (_, id: string) => getReport(id));
+  ipcMain.handle("reports:save", (_, report: BasicAIReport) => saveReport(report));
 }
 
 // ─── App lifecycle ────────────────────────────────────────────────────────────
