@@ -34,8 +34,11 @@ mac:
   category: public.app-category.business
   icon: assets/icon.icns
   hardenedRuntime: true
+  gatekeeperAssess: false        # notarytool handles this; skip local check
   entitlements: assets/entitlements.mac.plist
   entitlementsInherit: assets/entitlements.mac.plist
+  notarize:
+    teamId: ${APPLE_TEAM_ID}     # 10-char Team ID from developer.apple.com
   target:
     - target: dmg
       arch: [x64, arm64]

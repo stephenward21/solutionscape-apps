@@ -21,3 +21,8 @@ dist/
 
 # OS
 .DS_Store
+
+# macOS signing credentials — never commit
+.env.mac-signing
+*.p12
+*.p8
