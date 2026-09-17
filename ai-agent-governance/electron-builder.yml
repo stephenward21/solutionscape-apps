@@ -51,13 +51,23 @@ dmg:
 # Windows
 win:
   icon: assets/icon.ico
+  # Certificate loaded from WIN_CSC_LINK (.pfx) + WIN_CSC_KEY_PASSWORD env vars.
+  # For EV certs on a hardware token, set WIN_CSC_LINK to the cert thumbprint and
+  # signtool will pick it up from the token — do not set WIN_CSC_KEY_PASSWORD.
+  publisherName: SolutionScape        # must match the O= field in your certificate
+  signingHashAlgorithms: [sha256]
   target:
     - target: nsis
-      arch: [x64]
+      arch: [x64, arm64]
 
 nsis:
   oneClick: false
   allowToChangeInstallationDirectory: true
+  # Show license on install
+  license: assets/LICENSE.rtf
+  # Installer branding
+  installerIcon: assets/icon.ico
+  uninstallerIcon: assets/icon.ico
 
 # Linux
 linux:
