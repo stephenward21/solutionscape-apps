@@ -255,7 +255,12 @@ export default function IdPPanel({ onConnected }: IdPPanelProps) {
       {connected && (
         <UserActivityTable
           users={activity}
+          provider={selected !== "demo" && selected !== "manual" ? selected as "google" | "microsoft" | "okta" : undefined}
+          credentials={creds as unknown as Record<string, string> | undefined}
           onDisconnect={() => { setConnected(false); setActivity([]); setSelected(null); setCreds(null); }}
+          onOpenRevokeGuide={() => openGuide(
+            selected && selected !== "demo" && selected !== "manual" ? selected : "google"
+          )}
         />
       )}
     </div>
@@ -584,7 +589,57 @@ function FormFooter({ loading, error, label }: { loading: boolean; error: string
 
 // ─── User activity table ──────────────────────────────────────────────────────
 
-function UserActivityTable({ users, onDisconnect }: { users: UserActivity[]; onDisconnect: () => void }) {
+type RevokeState = "idle" | "confirming" | "revoking" | "revoked" | "error";
+
+interface UserActivityTableProps {
+  users: UserActivity[];
+  provider?: "google" | "microsoft" | "okta";
+  credentials?: Record<string, string>;
+  onDisconnect: () => void;
+  onOpenRevokeGuide?: () => void;
+}
+
+function UserActivityTable({ users, provider, credentials, onDisconnect, onOpenRevokeGuide }: UserActivityTableProps) {
+  // Key: `${userId}::${clientId ?? toolName}` → state
+  const [revokeStates, setRevokeStates] = useState<Record<string, RevokeState>>({});
+  const [revokeErrors, setRevokeErrors] = useState<Record<string, string>>({});
+
+  const canRevoke = !!(provider && credentials && provider !== undefined);
+
+  function toolKey(userId: string, tool: { tool: string; clientId?: string }) {
+    return `${userId}::${tool.clientId ?? tool.tool}`;
+  }
+
+  function setState(key: string, s: RevokeState) {
+    setRevokeStates(prev => ({ ...prev, [key]: s }));
+  }
+
+  async function doRevoke(user: UserActivity, tool: { tool: string; clientId?: string; idpItemId?: string }) {
+    if (!canRevoke || !tool.clientId) return;
+    const key = toolKey(user.userId, tool);
+    setState(key, "revoking");
+    try {
+      const res = await fetch("/api/idp/revoke", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          provider,
+          credentials,
+          userEmail: user.email,
+          clientId: tool.clientId,
+          idpItemId: tool.idpItemId,
+          toolName: tool.tool,
+        }),
+      });
+      const data = await res.json() as { success?: boolean; error?: string };
+      if (!res.ok || data.error) throw new Error(data.error ?? "Revoke failed");
+      setState(key, "revoked");
+    } catch (e) {
+      setState(key, "error");
+      setRevokeErrors(prev => ({ ...prev, [key]: e instanceof Error ? e.message : String(e) }));
+    }
+  }
+
   if (users.length === 0) {
     return (
       <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 text-center">
@@ -607,32 +662,145 @@ function UserActivityTable({ users, onDisconnect }: { users: UserActivity[]; onD
           Disconnect
         </button>
       </div>
+
+      {/* Write-permission notice when provider doesn't support in-app revoke */}
+      {!canRevoke && (
+        <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-3">
+          <span className="text-amber-500 text-sm shrink-0 mt-0.5">⚠</span>
+          <p className="text-xs text-amber-800 leading-relaxed">
+            <span className="font-semibold">In-app deactivation requires write permissions.</span>{" "}
+            The current connection uses read-only credentials.{" "}
+            {onOpenRevokeGuide && (
+              <button onClick={onOpenRevokeGuide} className="underline font-medium hover:text-amber-900">
+                View required permissions →
+              </button>
+            )}
+          </p>
+        </div>
+      )}
+
       <div className="space-y-2">
-        {users.map((u) => (
-          <div key={u.userId} className="bg-white border border-slate-200 rounded-lg p-3">
-            <div className="flex items-start justify-between">
-              <div>
-                <p className="text-sm font-semibold text-slate-800">{u.displayName ?? u.email}</p>
-                <p className="text-xs text-slate-400">
-                  {u.email}{u.department && ` · ${u.department}`}
-                </p>
-              </div>
-              <span className="text-xs bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full shrink-0">
-                {u.aiToolsDetected.length} tool{u.aiToolsDetected.length !== 1 ? "s" : ""}
-              </span>
-            </div>
-            <div className="flex flex-wrap gap-1 mt-2">
-              {u.aiToolsDetected.map((t, i) => (
-                <span key={i} className="text-xs bg-purple-50 text-purple-700 border border-purple-200 px-2 py-0.5 rounded-full">
-                  {t.tool}
-                  {t.systemsAccessed && t.systemsAccessed.length > 0 && (
-                    <span className="ml-1 opacity-60">· {t.systemsAccessed.join(", ")}</span>
+        {users.map((u) => {
+          const activeTools = u.aiToolsDetected.filter(t => toolKey(u.userId, t) in revokeStates
+            ? revokeStates[toolKey(u.userId, t)] !== "revoked"
+            : true
+          );
+          const revokedCount = u.aiToolsDetected.length - activeTools.length;
+
+          return (
+            <div key={u.userId} className="bg-white border border-slate-200 rounded-lg p-3">
+              <div className="flex items-start justify-between mb-2">
+                <div>
+                  <p className="text-sm font-semibold text-slate-800">{u.displayName ?? u.email}</p>
+                  <p className="text-xs text-slate-400">
+                    {u.email}{u.department && ` · ${u.department}`}
+                  </p>
+                </div>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  {revokedCount > 0 && (
+                    <span className="text-xs bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full">
+                      {revokedCount} deactivated
+                    </span>
                   )}
-                </span>
-              ))}
+                  <span className="text-xs bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full">
+                    {activeTools.length} tool{activeTools.length !== 1 ? "s" : ""}
+                  </span>
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                {u.aiToolsDetected.map((t, i) => {
+                  const key = toolKey(u.userId, t);
+                  const state = revokeStates[key] ?? "idle";
+                  const hasClientId = !!t.clientId;
+
+                  if (state === "revoked") {
+                    return (
+                      <div key={i} className="flex items-center gap-2 opacity-50">
+                        <span className="text-xs bg-slate-50 text-slate-400 border border-slate-200 px-2 py-1 rounded-lg line-through">
+                          {t.tool}
+                        </span>
+                        <span className="text-xs text-emerald-600 font-medium flex items-center gap-1">
+                          <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                          </svg>
+                          Deactivated
+                        </span>
+                      </div>
+                    );
+                  }
+
+                  if (state === "confirming") {
+                    return (
+                      <div key={i} className="flex items-center gap-2 bg-rose-50 border border-rose-200 rounded-lg px-2.5 py-1.5">
+                        <span className="text-xs font-medium text-rose-800 flex-1">
+                          Revoke <strong>{t.tool}</strong> access for {u.displayName ?? u.email}?
+                        </span>
+                        <button
+                          onClick={() => setState(key, "idle")}
+                          className="text-xs text-slate-500 hover:text-slate-700 px-2 py-0.5 rounded border border-slate-200 bg-white"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          onClick={() => doRevoke(u, t)}
+                          className="text-xs text-white bg-rose-600 hover:bg-rose-700 px-2 py-0.5 rounded font-medium"
+                        >
+                          Deactivate
+                        </button>
+                      </div>
+                    );
+                  }
+
+                  if (state === "revoking") {
+                    return (
+                      <div key={i} className="flex items-center gap-2">
+                        <span className="text-xs bg-purple-50 text-purple-700 border border-purple-200 px-2 py-1 rounded-lg">
+                          {t.tool}
+                        </span>
+                        <svg className="animate-spin w-3.5 h-3.5 text-slate-400" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+                        </svg>
+                        <span className="text-xs text-slate-400">Revoking…</span>
+                      </div>
+                    );
+                  }
+
+                  return (
+                    <div key={i} className="flex items-center gap-1.5 flex-wrap">
+                      <span className="text-xs bg-purple-50 text-purple-700 border border-purple-200 px-2 py-1 rounded-lg">
+                        {t.tool}
+                        {t.systemsAccessed && t.systemsAccessed.length > 0 && (
+                          <span className="ml-1 opacity-60">· {t.systemsAccessed.join(", ")}</span>
+                        )}
+                      </span>
+                      {state === "error" && (
+                        <span className="text-xs text-rose-600" title={revokeErrors[key]}>
+                          ✕ {revokeErrors[key]?.slice(0, 60)}
+                        </span>
+                      )}
+                      {canRevoke && (
+                        <button
+                          disabled={!hasClientId}
+                          title={!hasClientId ? "No OAuth client ID found for this tool — cannot revoke via API" : `Revoke ${t.tool} access for this user`}
+                          onClick={() => setState(key, "confirming")}
+                          className={`text-xs px-2 py-0.5 rounded border transition-colors ${
+                            hasClientId
+                              ? "text-rose-600 border-rose-200 hover:bg-rose-50 hover:border-rose-300"
+                              : "text-slate-300 border-slate-100 cursor-not-allowed"
+                          }`}
+                        >
+                          Deactivate
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );

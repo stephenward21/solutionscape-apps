@@ -256,10 +256,10 @@ function GoogleSetup() {
         <Tip>Use a shared service account address (e.g., <code className="bg-brand-50 px-1 rounded">it-admin@yourorg.com</code>) rather than a personal admin account so access isn&apos;t tied to one person.</Tip>
       </Step>
 
-      <SectionDivider label="Required permissions summary" />
+      <SectionDivider label="Read permissions — directory sync" />
 
       <div className="rounded-xl border border-slate-200 overflow-hidden text-xs">
-        <div className="bg-slate-50 px-3 py-2 font-semibold text-slate-600 border-b border-slate-200">Minimum required scopes</div>
+        <div className="bg-slate-50 px-3 py-2 font-semibold text-slate-600 border-b border-slate-200">Required for scanning (read-only)</div>
         {[
           ["admin.directory.user.readonly", "List all users in the directory"],
           ["admin.reports.audit.readonly", "Read OAuth token grant/revoke events"],
@@ -271,6 +271,28 @@ function GoogleSetup() {
           </div>
         ))}
       </div>
+
+      <SectionDivider label="Write permissions — in-app deactivation" />
+
+      <div className="flex gap-2 bg-rose-50 border border-rose-100 rounded-lg px-3 py-2 mb-2">
+        <span className="text-rose-400 text-sm shrink-0">🔒</span>
+        <p className="text-xs text-rose-800 leading-relaxed">
+          The following additional scope is only needed if you want to use the <strong>Deactivate</strong> action
+          inside SolutionScape to revoke a user&apos;s OAuth token directly, without visiting the Google Admin Console.
+        </p>
+      </div>
+
+      <div className="rounded-xl border border-rose-200 overflow-hidden text-xs">
+        <div className="bg-rose-50 px-3 py-2 font-semibold text-rose-700 border-b border-rose-200">Additional scope — add to domain-wide delegation</div>
+        <div className="px-3 py-2">
+          <code className="text-[11px] font-mono text-rose-700">https://www.googleapis.com/auth/admin.directory.user.security</code>
+          <p className="text-slate-400 mt-0.5">Allows the service account to call <code className="bg-slate-100 px-1 rounded">tokens.delete</code> to revoke a specific user&apos;s OAuth grant for a third-party app.</p>
+        </div>
+      </div>
+
+      <p className="text-xs text-slate-400 mt-2 leading-relaxed">
+        To add this scope: in Google Admin Console → <NavPath parts={["Security", "API controls", "Domain-wide delegation"]} />, find your service account entry and add the scope above to the existing list. No other changes are needed.
+      </p>
     </div>
   );
 }
@@ -315,10 +337,10 @@ function MicrosoftSetup() {
         <Note>Set a calendar reminder to rotate the secret before it expires. SolutionScape will fail to connect once the secret expires.</Note>
       </Step>
 
-      <SectionDivider label="Required permissions summary" />
+      <SectionDivider label="Read permissions — directory sync" />
 
       <div className="rounded-xl border border-slate-200 overflow-hidden text-xs">
-        <div className="bg-slate-50 px-3 py-2 font-semibold text-slate-600 border-b border-slate-200">Microsoft Graph — Application permissions</div>
+        <div className="bg-slate-50 px-3 py-2 font-semibold text-slate-600 border-b border-slate-200">Microsoft Graph — Application permissions (read-only)</div>
         {[
           ["AuditLog.Read.All", "Read sign-in and audit logs for all users"],
           ["Directory.Read.All", "Read all users, groups, and directory metadata"],
@@ -331,9 +353,38 @@ function MicrosoftSetup() {
         ))}
       </div>
 
+      <SectionDivider label="Write permissions — in-app deactivation" />
+
+      <div className="flex gap-2 bg-rose-50 border border-rose-100 rounded-lg px-3 py-2 mb-2">
+        <span className="text-rose-400 text-sm shrink-0">🔒</span>
+        <p className="text-xs text-rose-800 leading-relaxed">
+          The following permissions are only needed to use the <strong>Deactivate</strong> action inside
+          SolutionScape. SolutionScape uses two strategies: if the specific OAuth grant ID is known,
+          it calls <code className="bg-rose-100 px-1 rounded">oauth2PermissionGrants.delete</code>
+          (targeted); otherwise it falls back to <code className="bg-rose-100 px-1 rounded">revokeSignInSessions</code> (revokes all active Microsoft sessions for the user).
+        </p>
+      </div>
+
+      <div className="rounded-xl border border-rose-200 overflow-hidden text-xs">
+        <div className="bg-rose-50 px-3 py-2 font-semibold text-rose-700 border-b border-rose-200">Additional Graph permissions — add to app registration</div>
+        {[
+          ["DelegatedPermissionGrant.ReadWrite.All", "Targeted: delete a specific OAuth permission grant (preferred — narrowest scope)"],
+          ["User.RevokeSessions.All", "Fallback: revoke all active Microsoft sign-in sessions for a user"],
+        ].map(([perm, desc]) => (
+          <div key={perm} className="px-3 py-2 border-b border-rose-100 last:border-0">
+            <code className="text-[11px] font-mono text-rose-700">{perm}</code>
+            <p className="text-slate-400 mt-0.5">{desc}</p>
+          </div>
+        ))}
+      </div>
+
+      <p className="text-xs text-slate-400 mt-2 leading-relaxed">
+        Add these in Azure Portal → <NavPath parts={["API permissions", "Add a permission", "Microsoft Graph", "Application permissions"]} />, then click <strong>Grant admin consent</strong>.
+      </p>
+
       <Tip>
         If your org uses <strong>Conditional Access</strong>, ensure the registered app is excluded from
-        policies that would block service-principal sign-ins — otherwise the API calls will be denied.
+        policies that would block service-principal sign-ins — otherwise both sync and deactivation calls will be denied.
       </Tip>
     </div>
   );
@@ -378,10 +429,10 @@ function OktaSetup() {
         <p className="mt-1">Do not include <code className="bg-slate-100 px-1 rounded">https://</code> when entering it in SolutionScape.</p>
       </Step>
 
-      <SectionDivider label="Required API access summary" />
+      <SectionDivider label="Read permissions — directory sync" />
 
       <div className="rounded-xl border border-slate-200 overflow-hidden text-xs">
-        <div className="bg-slate-50 px-3 py-2 font-semibold text-slate-600 border-b border-slate-200">Okta API endpoints used</div>
+        <div className="bg-slate-50 px-3 py-2 font-semibold text-slate-600 border-b border-slate-200">Okta API endpoints used (Read-Only Admin token)</div>
         {[
           ["/api/v1/users", "List all active directory users"],
           ["/api/v1/apps", "List all app integrations"],
@@ -394,6 +445,36 @@ function OktaSetup() {
           </div>
         ))}
       </div>
+
+      <SectionDivider label="Write permissions — in-app deactivation" />
+
+      <div className="flex gap-2 bg-rose-50 border border-rose-100 rounded-lg px-3 py-2 mb-2">
+        <span className="text-rose-400 text-sm shrink-0">🔒</span>
+        <p className="text-xs text-rose-800 leading-relaxed">
+          The <strong>Deactivate</strong> action in SolutionScape calls{" "}
+          <code className="bg-rose-100 px-1 rounded">DELETE /api/v1/apps/{"{appId}"}/users/{"{userId}"}</code> to
+          remove a user&apos;s Okta app assignment. This requires a higher-privilege role than Read-Only Admin.
+        </p>
+      </div>
+
+      <div className="rounded-xl border border-rose-200 overflow-hidden text-xs">
+        <div className="bg-rose-50 px-3 py-2 font-semibold text-rose-700 border-b border-rose-200">Required role for deactivation</div>
+        <div className="px-3 py-2 border-b border-rose-100">
+          <code className="text-[11px] font-mono text-rose-700">Application Administrator</code>
+          <p className="text-slate-400 mt-0.5">Minimum role to remove a user from an app assignment. Cannot modify app settings or create apps.</p>
+        </div>
+        <div className="px-3 py-2">
+          <code className="text-[11px] font-mono text-rose-700">Super Administrator</code>
+          <p className="text-slate-400 mt-0.5">Alternative if Application Administrator is not available. Carries broader permissions — use a dedicated service account.</p>
+        </div>
+      </div>
+
+      <Note>
+        The Read-Only Admin token used for syncing <strong>cannot</strong> be used for deactivation.
+        You can either upgrade the existing service account&apos;s role, or create a second service account
+        with Application Admin role and generate a separate API token for deactivation. SolutionScape
+        uses the same credential field for both — the token must have write access to use Deactivate.
+      </Note>
     </div>
   );
 }
