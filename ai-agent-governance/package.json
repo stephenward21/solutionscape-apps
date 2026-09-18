@@ -1,5 +1,5 @@
 {
-  "name": "ai-agent-governance",
+  "name": "ai-tooling-governance",
   "version": "0.1.0",
   "private": true,
   "main": "electron-dist/electron/main.js",

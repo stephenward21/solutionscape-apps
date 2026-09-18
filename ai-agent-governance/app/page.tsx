@@ -30,7 +30,7 @@ export default function HomePage() {
           <div className="mb-3">
             <span className="text-sm font-semibold tracking-widest text-brand-400 uppercase">SolutionScape</span>
           </div>
-          <h1 className="text-4xl font-bold text-white mb-3">AI Agent Governance</h1>
+          <h1 className="text-4xl font-bold text-white mb-3">AI Tooling Governance</h1>
           <p className="text-slate-400 text-lg max-w-2xl mx-auto">
             Discover every AI tool your team uses, score the risk, and enforce
             your acceptable use policy — all from your identity provider.

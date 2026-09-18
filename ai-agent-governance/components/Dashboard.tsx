@@ -90,7 +90,7 @@ export default function Dashboard() {
             </svg>
             <div style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}>
               <div className="font-bold text-slate-900 leading-tight tracking-tight">SolutionScape</div>
-              <div className="text-xs text-slate-400 font-medium">AI Agent Governance</div>
+              <div className="text-xs text-slate-400 font-medium">AI Tooling Governance</div>
             </div>
 
             <div className="ml-auto flex items-center gap-1" style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}>
