@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
 import {
   ResponsiveContainer,
@@ -98,6 +98,152 @@ function LineTooltip({ active, payload, label }: {
           {p.name}: <span className="font-bold">{p.value}</span>
         </p>
       ))}
+    </div>
+  );
+}
+
+// ─── Export helpers ───────────────────────────────────────────────────────────
+
+function csvRow(cells: (string | number | undefined)[]): string {
+  return cells.map((c) => {
+    const s = c == null ? "" : String(c);
+    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  }).join(",");
+}
+
+function downloadBlob(content: string, filename: string, mime: string) {
+  const blob = new Blob([content], { type: mime });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement("a");
+  a.href = url; a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function exportToolsCsv(report: BasicAIReport) {
+  const header = csvRow(["Tool", "Vendor", "Category", "Risk Level", "Risk Score", "Users", "Data Access"]);
+  const rows   = [...report.toolProfiles]
+    .sort((a, b) => b.riskScore - a.riskScore)
+    .map((t) => csvRow([
+      t.tool, t.vendor, t.category, t.riskLevel, t.riskScore, t.userCount,
+      t.dataAccess.join("; "),
+    ]));
+  const date = new Date(report.generatedAt).toISOString().slice(0, 10);
+  downloadBlob([header, ...rows].join("\n"), `ai-tools-report-${date}.csv`, "text/csv");
+}
+
+function exportHistoryCsv(summaries: (ReportSummary | StoredReportSummary)[]) {
+  const header = csvRow(["Date", "Total Tools", "Critical", "High Risk", "Total Users"]);
+  const rows   = [...summaries].reverse().map((s) =>
+    csvRow([
+      new Date(s.generatedAt).toLocaleString(),
+      s.totalTools, s.criticalTools, s.highRiskTools, s.totalUsers,
+    ])
+  );
+  const date = new Date().toISOString().slice(0, 10);
+  downloadBlob([header, ...rows].join("\n"), `ai-scan-history-${date}.csv`, "text/csv");
+}
+
+function exportJson(report: BasicAIReport) {
+  const date = new Date(report.generatedAt).toISOString().slice(0, 10);
+  downloadBlob(JSON.stringify(report, null, 2), `ai-report-${date}.json`, "application/json");
+}
+
+// ─── Export menu ──────────────────────────────────────────────────────────────
+
+function ExportMenu({ report, summaries }: {
+  report: BasicAIReport | null;
+  summaries: (ReportSummary | StoredReportSummary)[];
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function onClickOutside(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener("mousedown", onClickOutside);
+    return () => document.removeEventListener("mousedown", onClickOutside);
+  }, []);
+
+  const hasReport    = !!report;
+  const hasHistory   = summaries.length > 0;
+  const hasAnything  = hasReport || hasHistory;
+
+  if (!hasAnything) return null;
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className="inline-flex items-center gap-1.5 text-xs border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-medium px-3 py-1.5 rounded-lg transition-colors"
+      >
+        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+        </svg>
+        Export
+        <svg className={`w-3 h-3 transition-transform ${open ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+        </svg>
+      </button>
+
+      {open && (
+        <div className="absolute right-0 mt-1 w-64 bg-white border border-slate-200 rounded-xl shadow-lg z-20 py-1.5 overflow-hidden">
+          <p className="px-3 pt-1 pb-2 text-xs font-semibold text-slate-400 uppercase tracking-wide">Export options</p>
+
+          {hasReport && (
+            <button
+              onClick={() => { exportToolsCsv(report!); setOpen(false); }}
+              className="w-full flex items-start gap-3 px-3 py-2.5 hover:bg-slate-50 transition-colors text-left"
+            >
+              <span className="text-lg leading-none mt-0.5">📋</span>
+              <span>
+                <span className="block text-xs font-semibold text-slate-700">Tools Report (CSV)</span>
+                <span className="block text-xs text-slate-400 mt-0.5">Full tool inventory — risk scores, categories, user counts. Open in Excel or Google Sheets.</span>
+              </span>
+            </button>
+          )}
+
+          {hasHistory && (
+            <button
+              onClick={() => { exportHistoryCsv(summaries); setOpen(false); }}
+              className="w-full flex items-start gap-3 px-3 py-2.5 hover:bg-slate-50 transition-colors text-left"
+            >
+              <span className="text-lg leading-none mt-0.5">📈</span>
+              <span>
+                <span className="block text-xs font-semibold text-slate-700">Scan History (CSV)</span>
+                <span className="block text-xs text-slate-400 mt-0.5">Trend data across all scans — total tools, critical/high counts per scan.</span>
+              </span>
+            </button>
+          )}
+
+          {hasReport && (
+            <button
+              onClick={() => { exportJson(report!); setOpen(false); }}
+              className="w-full flex items-start gap-3 px-3 py-2.5 hover:bg-slate-50 transition-colors text-left"
+            >
+              <span className="text-lg leading-none mt-0.5">🗂️</span>
+              <span>
+                <span className="block text-xs font-semibold text-slate-700">Full Report (JSON)</span>
+                <span className="block text-xs text-slate-400 mt-0.5">Complete raw data for integration with other tools or compliance systems.</span>
+              </span>
+            </button>
+          )}
+
+          <div className="border-t border-slate-100 mt-1.5 pt-1.5">
+            <button
+              onClick={() => { window.print(); setOpen(false); }}
+              className="w-full flex items-start gap-3 px-3 py-2.5 hover:bg-slate-50 transition-colors text-left"
+            >
+              <span className="text-lg leading-none mt-0.5">🖨️</span>
+              <span>
+                <span className="block text-xs font-semibold text-slate-700">Print / Save as PDF</span>
+                <span className="block text-xs text-slate-400 mt-0.5">Print-ready view for executive presentations or audit documentation.</span>
+              </span>
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -268,14 +414,17 @@ export default function MetricsPanel({ currentReport }: MetricsPanelProps) {
               : ""}
           </p>
         </div>
-        {eAPI && (
-          <button
-            onClick={() => void loadHistory()}
-            className="text-xs border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 px-3 py-1.5 rounded-lg transition-colors"
-          >
-            Refresh
-          </button>
-        )}
+        <div className="flex gap-2 shrink-0">
+          {eAPI && (
+            <button
+              onClick={() => void loadHistory()}
+              className="text-xs border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 px-3 py-1.5 rounded-lg transition-colors"
+            >
+              Refresh
+            </button>
+          )}
+          <ExportMenu report={report} summaries={summaries} />
+        </div>
       </div>
 
       {/* KPI strip */}
