@@ -6,6 +6,280 @@ import type {
   PolicyAnalysisResult, UserActivity, IdPProvider,
 } from "@/lib/types";
 
+// ─── Print export ─────────────────────────────────────────────────────────────
+
+function statusColor(s: ComplianceStatus): string {
+  return s === "BREACH" ? "#e11d48" : s === "CONDITIONAL" ? "#d97706" : s === "COMPLIANT" ? "#059669" : "#94a3b8";
+}
+function statusLabel(s: ComplianceStatus): string {
+  return s === "BREACH" ? "Breach" : s === "CONDITIONAL" ? "Conditional" : s === "COMPLIANT" ? "Compliant" : "Unknown";
+}
+
+function buildPrintHtml(report: GovernanceReport): string {
+  const date = new Date(report.generatedAt).toLocaleString(undefined, {
+    year: "numeric", month: "long", day: "numeric", hour: "numeric", minute: "2-digit",
+  });
+
+  // ── Aggregate apps (same logic as appRows in the component) ──────────────────
+  const appMap = new Map<string, { tool: string; vendor: string; worstStatus: ComplianceStatus; breachCount: number; conditionalCount: number; approvedCount: number; reason?: string; recommendation?: string }>();
+  for (const u of report.userRecords) {
+    for (const t of u.breachingTools) {
+      const e = appMap.get(t.tool);
+      e ? e.breachCount++ : appMap.set(t.tool, { tool: t.tool, vendor: t.vendor, worstStatus: "BREACH", breachCount: 1, conditionalCount: 0, approvedCount: 0, reason: t.reason, recommendation: t.recommendation });
+    }
+    for (const t of u.conditionalTools) {
+      const e = appMap.get(t.tool);
+      e ? e.conditionalCount++ : appMap.set(t.tool, { tool: t.tool, vendor: t.vendor, worstStatus: "CONDITIONAL", breachCount: 0, conditionalCount: 1, approvedCount: 0, reason: t.reason, recommendation: t.recommendation });
+    }
+    for (const t of u.approvedTools) {
+      const e = appMap.get(t.tool);
+      e ? e.approvedCount++ : appMap.set(t.tool, { tool: t.tool, vendor: t.vendor, worstStatus: "COMPLIANT", breachCount: 0, conditionalCount: 0, approvedCount: 1 });
+    }
+  }
+  const apps = [...appMap.values()].sort((a, b) => {
+    const o: Record<ComplianceStatus, number> = { BREACH: 4, CONDITIONAL: 3, UNKNOWN: 2, COMPLIANT: 1 };
+    return o[b.worstStatus] - o[a.worstStatus];
+  });
+
+  const sortedUsers = [...report.userRecords].sort((a, b) => b.riskScore - a.riskScore);
+
+  // ── HTML helpers ──────────────────────────────────────────────────────────────
+  const h = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+  const kpiBox = (label: string, value: number | string, color = "#1e293b") =>
+    `<div style="flex:1;min-width:100px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:14px 10px;text-align:center">
+       <div style="font-size:26px;font-weight:700;color:${color}">${value}</div>
+       <div style="font-size:11px;color:#64748b;margin-top:3px">${h(label)}</div>
+     </div>`;
+
+  const badge = (s: ComplianceStatus) =>
+    `<span style="display:inline-block;background:${s === "BREACH" ? "#fff1f2" : s === "CONDITIONAL" ? "#fffbeb" : s === "COMPLIANT" ? "#ecfdf5" : "#f8fafc"};color:${statusColor(s)};border:1px solid ${s === "BREACH" ? "#fecdd3" : s === "CONDITIONAL" ? "#fde68a" : s === "COMPLIANT" ? "#a7f3d0" : "#e2e8f0"};border-radius:20px;padding:2px 8px;font-size:11px;font-weight:600">${statusLabel(s)}</span>`;
+
+  const sectionHeader = (title: string, pageBreak = false) =>
+    `<h2 style="font-size:13px;font-weight:700;color:#1e293b;text-transform:uppercase;letter-spacing:.07em;border-bottom:2px solid #e2e8f0;padding-bottom:8px;margin:${pageBreak ? "0 0 16px" : "28px 0 16px"};${pageBreak ? "page-break-before:always;padding-top:20px;" : ""}">${h(title)}</h2>`;
+
+  const tdStyle = "padding:8px 10px;border-bottom:1px solid #f1f5f9;font-size:12px;color:#334155;vertical-align:top";
+  const thStyle = "padding:8px 10px;background:#f8fafc;font-size:11px;color:#64748b;font-weight:600;text-align:left;border-bottom:2px solid #e2e8f0";
+
+  // ── Section 1: Summary ────────────────────────────────────────────────────────
+  const summarySection = `
+    ${sectionHeader("Compliance Summary")}
+
+    <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:20px">
+      ${kpiBox("Total Users",   report.totalUsers)}
+      ${kpiBox("Compliant",     report.compliantUsers,   "#059669")}
+      ${kpiBox("In Breach",     report.breachingUsers,   "#e11d48")}
+      ${kpiBox("Conditional",   report.conditionalUsers, "#d97706")}
+      ${kpiBox("Unknown",       report.unknownUsers ?? 0, "#94a3b8")}
+    </div>
+
+    ${report.aiNarrative ? `
+    <div style="background:#f0f9ff;border:1px solid #bae6fd;border-radius:10px;padding:16px 18px;margin-bottom:16px">
+      <div style="font-size:11px;font-weight:700;color:#0369a1;text-transform:uppercase;letter-spacing:.07em;margin-bottom:8px">AI Executive Summary</div>
+      <div style="font-size:12.5px;color:#1e293b;line-height:1.65">${h(report.aiNarrative)}</div>
+    </div>` : ""}
+
+    ${report.prohibitedToolsInUse.length > 0 ? `
+    <div style="background:#fff1f2;border:1px solid #fecdd3;border-radius:10px;padding:14px 16px;margin-bottom:12px">
+      <div style="font-size:11px;font-weight:700;color:#be123c;text-transform:uppercase;letter-spacing:.07em;margin-bottom:8px">Prohibited Tools Actively In Use (${report.prohibitedToolsInUse.length})</div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px">
+        ${report.prohibitedToolsInUse.map((t) => `<span style="background:white;border:1px solid #fecdd3;color:#be123c;border-radius:20px;padding:2px 10px;font-size:12px;font-weight:500">${h(t)}</span>`).join("")}
+      </div>
+    </div>` : ""}
+
+    ${report.toolsNeedingReview > 0 ? `
+    <div style="background:#faf5ff;border:1px solid #e9d5ff;border-radius:10px;padding:12px 16px;margin-bottom:12px">
+      <div style="font-size:12px;font-weight:600;color:#7c3aed">${report.toolsNeedingReview} app${report.toolsNeedingReview === 1 ? "" : "s"} flagged for manual review — could not be automatically classified.</div>
+    </div>` : ""}
+
+    <div style="background:white;border:1px solid #e2e8f0;border-radius:10px;padding:16px 18px;margin-bottom:16px">
+      <div style="font-size:11px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:.07em;margin-bottom:12px">Compliance Breakdown</div>
+      <table style="width:100%;border-collapse:collapse">
+        <thead><tr>
+          <th style="${thStyle}">Status</th>
+          <th style="${thStyle}">Users</th>
+          <th style="${thStyle}">% of Total</th>
+        </tr></thead>
+        <tbody>
+          ${(["BREACH","CONDITIONAL","COMPLIANT","UNKNOWN"] as ComplianceStatus[]).map((s) => {
+            const count = report.userRecords.filter((u) => u.complianceStatus === s).length;
+            const pct   = report.totalUsers ? Math.round((count / report.totalUsers) * 100) : 0;
+            return `<tr>
+              <td style="${tdStyle}">${badge(s)}</td>
+              <td style="${tdStyle};font-weight:600;color:${statusColor(s)}">${count}</td>
+              <td style="${tdStyle}">${pct}%</td>
+            </tr>`;
+          }).join("")}
+        </tbody>
+      </table>
+    </div>
+
+    ${report.topRiskUsers.length > 0 ? `
+    <div style="background:white;border:1px solid #e2e8f0;border-radius:10px;padding:16px 18px">
+      <div style="font-size:11px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:.07em;margin-bottom:12px">Top Risk Users</div>
+      <table style="width:100%;border-collapse:collapse">
+        <thead><tr>
+          <th style="${thStyle}">User</th>
+          <th style="${thStyle}">Department</th>
+          <th style="${thStyle}">Status</th>
+          <th style="${thStyle}">Risk Score</th>
+        </tr></thead>
+        <tbody>
+          ${report.topRiskUsers.slice(0, 10).map((u) => `
+          <tr>
+            <td style="${tdStyle}"><div style="font-weight:500">${h(u.displayName ?? u.email)}</div>${u.displayName ? `<div style="font-size:11px;color:#94a3b8">${h(u.email)}</div>` : ""}</td>
+            <td style="${tdStyle}">${h(u.department ?? "—")}</td>
+            <td style="${tdStyle}">${badge(u.complianceStatus)}</td>
+            <td style="${tdStyle};font-weight:700;color:${statusColor(u.complianceStatus)}">${u.riskScore}</td>
+          </tr>`).join("")}
+        </tbody>
+      </table>
+    </div>` : ""}
+  `;
+
+  // ── Section 2: Identified Apps ────────────────────────────────────────────────
+  const appsSection = `
+    ${sectionHeader("Identified Apps", true)}
+    <table style="width:100%;border-collapse:collapse">
+      <thead><tr>
+        <th style="${thStyle}">Status</th>
+        <th style="${thStyle}">Tool</th>
+        <th style="${thStyle}">Vendor</th>
+        <th style="${thStyle}">In Breach</th>
+        <th style="${thStyle}">Conditional</th>
+        <th style="${thStyle}">Approved</th>
+        <th style="${thStyle}">Policy Reason</th>
+      </tr></thead>
+      <tbody>
+        ${apps.map((a) => `
+        <tr style="background:${a.worstStatus === "BREACH" ? "#fff1f2" : a.worstStatus === "CONDITIONAL" ? "#fffbeb" : "white"}">
+          <td style="${tdStyle}">${badge(a.worstStatus)}</td>
+          <td style="${tdStyle};font-weight:500">${h(a.tool)}</td>
+          <td style="${tdStyle};color:#64748b">${h(a.vendor)}</td>
+          <td style="${tdStyle};color:#e11d48;font-weight:600">${a.breachCount > 0 ? `${a.breachCount} user${a.breachCount !== 1 ? "s" : ""}` : "—"}</td>
+          <td style="${tdStyle};color:#d97706;font-weight:600">${a.conditionalCount > 0 ? String(a.conditionalCount) : "—"}</td>
+          <td style="${tdStyle};color:#059669;font-weight:600">${a.approvedCount > 0 ? String(a.approvedCount) : "—"}</td>
+          <td style="${tdStyle};color:#475569;font-size:11px">${h(a.reason ?? "")}</td>
+        </tr>`).join("")}
+      </tbody>
+    </table>
+  `;
+
+  // ── Section 3: Users ──────────────────────────────────────────────────────────
+  const usersSection = `
+    ${sectionHeader("User Detail", true)}
+    ${sortedUsers.map((u) => `
+    <div style="border:1px solid ${u.complianceStatus === "BREACH" ? "#fecdd3" : u.complianceStatus === "CONDITIONAL" ? "#fde68a" : "#e2e8f0"};border-radius:10px;margin-bottom:14px;overflow:hidden;page-break-inside:avoid">
+      <div style="padding:10px 14px;background:${u.complianceStatus === "BREACH" ? "#fff1f2" : u.complianceStatus === "CONDITIONAL" ? "#fffbeb" : "#f8fafc"};display:flex;align-items:center;gap:10px">
+        <div style="flex:1">
+          <span style="font-size:13px;font-weight:600;color:#0f172a">${h(u.displayName ?? u.email)}</span>
+          ${u.displayName ? `<span style="font-size:11px;color:#94a3b8;margin-left:8px">${h(u.email)}</span>` : ""}
+          ${u.department ? `<span style="font-size:11px;color:#64748b;margin-left:8px">· ${h(u.department)}</span>` : ""}
+        </div>
+        <div style="display:flex;align-items:center;gap:8px">
+          ${badge(u.complianceStatus)}
+          <span style="font-size:15px;font-weight:700;color:${statusColor(u.complianceStatus)}">${u.riskScore}</span>
+        </div>
+      </div>
+      ${u.breachingTools.length > 0 ? `
+      <div style="padding:10px 14px">
+        <div style="font-size:11px;font-weight:700;color:#be123c;margin-bottom:6px">POLICY BREACHES</div>
+        <table style="width:100%;border-collapse:collapse">
+          <thead><tr>
+            <th style="${thStyle}">Tool</th>
+            <th style="${thStyle}">Vendor</th>
+            <th style="${thStyle}">Reason</th>
+            <th style="${thStyle}">Recommendation</th>
+          </tr></thead>
+          <tbody>
+            ${u.breachingTools.map((t) => `
+            <tr style="background:#fff1f2">
+              <td style="${tdStyle};font-weight:500">${h(t.tool)}</td>
+              <td style="${tdStyle}">${h(t.vendor)}</td>
+              <td style="${tdStyle};color:#be123c">${h(t.reason ?? "")}</td>
+              <td style="${tdStyle};color:#475569">${h(t.recommendation ?? "")}</td>
+            </tr>`).join("")}
+          </tbody>
+        </table>
+      </div>` : ""}
+      ${u.conditionalTools.length > 0 ? `
+      <div style="padding:0 14px 10px">
+        <div style="font-size:11px;font-weight:700;color:#b45309;margin-bottom:6px">CONDITIONAL TOOLS</div>
+        <table style="width:100%;border-collapse:collapse">
+          <tbody>
+            ${u.conditionalTools.map((t) => `
+            <tr style="background:#fffbeb">
+              <td style="${tdStyle};font-weight:500;width:140px">${h(t.tool)}</td>
+              <td style="${tdStyle};color:#b45309">${h(t.reason ?? "")}</td>
+            </tr>`).join("")}
+          </tbody>
+        </table>
+      </div>` : ""}
+      ${u.approvedTools.length > 0 ? `
+      <div style="padding:0 14px 10px">
+        <div style="font-size:11px;font-weight:700;color:#059669;margin-bottom:5px">APPROVED TOOLS</div>
+        <div style="display:flex;flex-wrap:wrap;gap:5px">
+          ${u.approvedTools.map((t) => `<span style="background:#ecfdf5;color:#059669;border:1px solid #a7f3d0;border-radius:20px;padding:2px 8px;font-size:11px">${h(t.tool)}</span>`).join("")}
+        </div>
+      </div>` : ""}
+    </div>`).join("")}
+  `;
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>Compliance Report${report.organizationName ? ` — ${report.organizationName}` : ""}</title>
+  <style>
+    @page { margin: 18mm 16mm; size: A4; }
+    * { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; font-size: 12px; color: #1e293b; margin: 0; padding: 20px; background: white; }
+    table { page-break-inside: auto; }
+    tr { page-break-inside: avoid; }
+    @media print {
+      body { padding: 0; }
+      .no-print { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <!-- Cover header -->
+  <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:24px;padding-bottom:16px;border-bottom:3px solid #0f172a">
+    <div>
+      <div style="font-size:11px;font-weight:600;color:#64748b;text-transform:uppercase;letter-spacing:.1em;margin-bottom:4px">AI Tooling Governance</div>
+      <h1 style="font-size:22px;font-weight:800;color:#0f172a;margin:0 0 4px">Compliance Report</h1>
+      ${report.organizationName ? `<div style="font-size:14px;color:#475569;margin-bottom:2px">${h(report.organizationName)}</div>` : ""}
+      <div style="font-size:11px;color:#94a3b8">Generated ${h(date)}</div>
+    </div>
+    <div style="text-align:right">
+      <div style="font-size:11px;color:#94a3b8;margin-bottom:6px">Report covers</div>
+      <div style="font-size:20px;font-weight:700;color:#0f172a">${report.totalUsers} users</div>
+      <div style="font-size:11px;color:#64748b">${apps.length} apps identified</div>
+    </div>
+  </div>
+
+  ${summarySection}
+  ${appsSection}
+  ${usersSection}
+
+  <div style="margin-top:32px;padding-top:12px;border-top:1px solid #e2e8f0;text-align:center;font-size:10px;color:#94a3b8">
+    Confidential — AI Tooling Governance by SolutionScape · Generated ${h(date)}
+  </div>
+</body>
+</html>`;
+}
+
+function openPrintWindow(report: GovernanceReport) {
+  const html = buildPrintHtml(report);
+  const win  = window.open("", "_blank", "width=900,height=700");
+  if (!win) return;
+  win.document.write(html);
+  win.document.close();
+  win.focus();
+  setTimeout(() => { win.print(); }, 400);
+}
+
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const STATUS_CONFIG: Record<ComplianceStatus, { label: string; badge: string; dot: string; row: string; border: string }> = {
@@ -229,7 +503,7 @@ export default function ReportPanel({ policyResult, idpUsers, provider, credenti
           <p className="text-xs text-slate-400">Generated {new Date(report.generatedAt).toLocaleString()}</p>
         </div>
         <div className="flex gap-2">
-          <button onClick={() => window.print()} className="text-xs border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 px-3 py-1.5 rounded-lg transition-colors">
+          <button onClick={() => openPrintWindow(report)} className="text-xs border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 px-3 py-1.5 rounded-lg transition-colors">
             Print / PDF
           </button>
           <button onClick={() => { setReport(null); }} className="text-xs border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 px-3 py-1.5 rounded-lg transition-colors">
