@@ -200,6 +200,23 @@ function registerIpcHandlers(): void {
   ipcMain.handle("reports:list", () => listReports());
   ipcMain.handle("reports:get",  (_, id: string) => getReport(id));
   ipcMain.handle("reports:save", (_, report: BasicAIReport) => saveReport(report));
+
+  // Print report — open a hidden window, load the HTML, show print dialog
+  ipcMain.handle("report:print", async (_, html: string) => {
+    const win = new BrowserWindow({
+      width: 900, height: 700,
+      show: false,
+      webPreferences: { javascript: true },
+    });
+    await win.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);
+    win.show();
+    win.webContents.print({ silent: false, printBackground: true }, (success, errorType) => {
+      if (!success && errorType !== "cancelled") {
+        console.error("[report:print] print failed:", errorType);
+      }
+      win.destroy();
+    });
+  });
 }
 
 // ─── App lifecycle ────────────────────────────────────────────────────────────

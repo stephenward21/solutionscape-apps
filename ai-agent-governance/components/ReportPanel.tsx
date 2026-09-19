@@ -272,7 +272,12 @@ function buildPrintHtml(report: GovernanceReport): string {
 
 function openPrintWindow(report: GovernanceReport) {
   const html = buildPrintHtml(report);
-  const win  = window.open("", "_blank", "width=900,height=700");
+  // In Electron, window.open is blocked by setWindowOpenHandler — use IPC instead
+  if (window.electronAPI) {
+    void window.electronAPI.reports.print(html);
+    return;
+  }
+  const win = window.open("", "_blank", "width=900,height=700");
   if (!win) return;
   win.document.write(html);
   win.document.close();
