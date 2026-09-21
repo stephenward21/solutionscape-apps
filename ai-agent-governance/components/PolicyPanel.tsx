@@ -12,14 +12,16 @@ const STATUS_CONFIG: Record<AIToolPolicy["status"], { label: string; badge: stri
 
 interface PolicyPanelProps {
   onAnalysisComplete?: (result: PolicyAnalysisResult) => void;
+  initialResult?: PolicyAnalysisResult | null;
+  onClear?: () => void;
 }
 
-export default function PolicyPanel({ onAnalysisComplete }: PolicyPanelProps) {
+export default function PolicyPanel({ onAnalysisComplete, initialResult, onClear }: PolicyPanelProps) {
   const [file, setFile] = useState<File | null>(null);
   const [dragging, setDragging] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [result, setResult] = useState<PolicyAnalysisResult | null>(null);
+  const [result, setResult] = useState<PolicyAnalysisResult | null>(initialResult ?? null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   function handleFile(f: File) {
@@ -126,7 +128,7 @@ export default function PolicyPanel({ onAnalysisComplete }: PolicyPanelProps) {
         </button>
       )}
 
-      {result && <PolicyResults result={result} onReset={() => { setResult(null); setFile(null); }} />}
+      {result && <PolicyResults result={result} onReset={() => { setResult(null); setFile(null); onClear?.(); }} />}
     </div>
   );
 }

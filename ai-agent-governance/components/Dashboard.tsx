@@ -37,10 +37,77 @@ export default function Dashboard() {
       : "policy"
   );
 
-  const [policyResult, setPolicyResult]       = useState<PolicyAnalysisResult | null>(null);
-  const [idpUsers, setIdpUsers]               = useState<UserActivity[]>([]);
-  const [activeProvider, setActiveProvider]   = useState<IdPProvider | undefined>();
+  // ── Session-persistent state — survives navigation, cleared on explicit Disconnect/Clear ──
+  const [policyResult, setPolicyResult] = useState<PolicyAnalysisResult | null>(() => {
+    try { const s = sessionStorage.getItem("ss:policyResult"); return s ? JSON.parse(s) as PolicyAnalysisResult : null; } catch { return null; }
+  });
+  const [idpUsers, setIdpUsers] = useState<UserActivity[]>(() => {
+    try { const s = sessionStorage.getItem("ss:idpUsers"); return s ? JSON.parse(s) as UserActivity[] : []; } catch { return []; }
+  });
+  const [activeProvider, setActiveProvider] = useState<IdPProvider | undefined>(() => {
+    try { return (sessionStorage.getItem("ss:activeProvider") as IdPProvider) || undefined; } catch { return undefined; }
+  });
   const [activeCredentials, setActiveCredentials] = useState<Record<string, string> | undefined>();
+
+  // Sync state to sessionStorage on change
+  useEffect(() => {
+    try { policyResult ? sessionStorage.setItem("ss:policyResult", JSON.stringify(policyResult)) : sessionStorage.removeItem("ss:policyResult"); } catch {}
+  }, [policyResult]);
+  useEffect(() => {
+    try { idpUsers.length > 0 ? sessionStorage.setItem("ss:idpUsers", JSON.stringify(idpUsers)) : sessionStorage.removeItem("ss:idpUsers"); } catch {}
+  }, [idpUsers]);
+  useEffect(() => {
+    try { activeProvider ? sessionStorage.setItem("ss:activeProvider", activeProvider) : sessionStorage.removeItem("ss:activeProvider"); } catch {}
+  }, [activeProvider]);
+
+  // In Electron, reload credentials from keychain when provider is restored from session
+  useEffect(() => {
+    if (activeProvider && window.electronAPI && !activeCredentials) {
+      void window.electronAPI.credentials.load(activeProvider).then((creds) => {
+        if (creds) setActiveCredentials(creds as Record<string, string>);
+      });
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeProvider]);
+
+  // In Electron, detect which providers have saved credentials in Settings
+  const [savedProviders, setSavedProviders] = useState<IdPProvider[]>([]);
+  const [quickConnecting, setQuickConnecting] = useState(false);
+  useEffect(() => {
+    if (!window.electronAPI) return;
+    const providers: IdPProvider[] = ["google", "microsoft", "okta"];
+    void Promise.all(providers.map(async (p) => ({ p, has: await window.electronAPI!.credentials.has(p) })))
+      .then((results) => setSavedProviders(results.filter((r) => r.has).map((r) => r.p)));
+  }, []);
+
+  async function connectWithSavedCredentials(provider: IdPProvider) {
+    if (!window.electronAPI) return;
+    setQuickConnecting(true);
+    try {
+      const creds = await window.electronAPI.credentials.load(provider) as Record<string, string> | null;
+      if (!creds) return;
+      const res = await fetch("/api/idp/connect", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ provider, credentials: creds }),
+      });
+      const data = await res.json() as { users?: UserActivity[]; error?: string };
+      if (data.users) {
+        setIdpUsers(data.users);
+        setActiveProvider(provider);
+        setActiveCredentials(creds);
+      }
+    } finally {
+      setQuickConnecting(false);
+    }
+  }
+
+  function disconnectIdP() {
+    setIdpUsers([]);
+    setActiveProvider(undefined);
+    setActiveCredentials(undefined);
+    try { sessionStorage.removeItem("ss:idpUsers"); sessionStorage.removeItem("ss:activeProvider"); } catch {}
+  }
 
   // On macOS Electron the traffic-light buttons (close/minimize/expand) overlay
   // the top-left of the window. Push the header logo right to avoid the overlap.
@@ -302,15 +369,34 @@ export default function Dashboard() {
                     </div>
                     {idpDone && (
                       <button
-                        onClick={() => { setIdpUsers([]); setActiveProvider(undefined); setActiveCredentials(undefined); }}
+                        onClick={disconnectIdP}
                         className="text-xs text-emerald-600 hover:text-emerald-800 underline shrink-0"
                       >
-                        Reconnect
+                        Disconnect
                       </button>
                     )}
                   </div>
                   {!idpDone && (
-                    <div className="border-t border-slate-100 p-4">
+                    <div className="border-t border-slate-100 p-4 space-y-4">
+                      {savedProviders.length > 0 && (
+                        <div className="bg-brand-50 border border-brand-200 rounded-xl p-3 flex flex-wrap items-center gap-3">
+                          <p className="text-xs text-brand-700 font-medium flex-1 min-w-40">
+                            Credentials saved in Settings — connect instantly:
+                          </p>
+                          <div className="flex flex-wrap gap-2">
+                            {savedProviders.map((p) => (
+                              <button
+                                key={p}
+                                disabled={quickConnecting}
+                                onClick={() => void connectWithSavedCredentials(p)}
+                                className="text-xs font-semibold bg-white border border-brand-300 text-brand-700 hover:bg-brand-50 px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50 capitalize"
+                              >
+                                {quickConnecting ? "Connecting…" : `Use ${p === "google" ? "Google Workspace" : p === "microsoft" ? "Microsoft Entra" : "Okta"}`}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
                       <IdPPanel onConnected={(users, provider, creds) => {
                         setIdpUsers(users);
                         setActiveProvider(provider);
@@ -343,14 +429,46 @@ export default function Dashboard() {
               </div>
             )}
             {mode === "full" && fullTab === "policy" && (
-              <PolicyPanel onAnalysisComplete={(result) => setPolicyResult(result)} />
+              <PolicyPanel
+                initialResult={policyResult}
+                onAnalysisComplete={(result) => setPolicyResult(result)}
+                onClear={() => setPolicyResult(null)}
+              />
             )}
             {mode === "full" && fullTab === "idp" && (
-              <IdPPanel onConnected={(users, provider, creds) => {
-              setIdpUsers(users);
-              setActiveProvider(provider);
-              setActiveCredentials(creds);
-            }} />
+              <div className="space-y-4">
+                {idpDone ? (
+                  <div className="bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-3 flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-2">
+                      <span className="w-5 h-5 rounded-full bg-emerald-500 flex items-center justify-center shrink-0">
+                        <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
+                      </span>
+                      <p className="text-sm font-medium text-emerald-700">
+                        Directory connected — {idpUsers.length} users synced
+                        {activeProvider && <span className="text-emerald-600 font-normal ml-1 capitalize">({activeProvider === "google" ? "Google Workspace" : activeProvider === "microsoft" ? "Microsoft Entra" : activeProvider})</span>}
+                      </p>
+                    </div>
+                    <button onClick={disconnectIdP} className="text-xs text-emerald-600 hover:text-emerald-800 underline shrink-0">Disconnect</button>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {savedProviders.length > 0 && (
+                      <div className="bg-brand-50 border border-brand-200 rounded-xl p-3 flex flex-wrap items-center gap-3">
+                        <p className="text-xs text-brand-700 font-medium flex-1 min-w-40">Credentials saved in Settings — connect instantly:</p>
+                        <div className="flex flex-wrap gap-2">
+                          {savedProviders.map((p) => (
+                            <button key={p} disabled={quickConnecting} onClick={() => void connectWithSavedCredentials(p)}
+                              className="text-xs font-semibold bg-white border border-brand-300 text-brand-700 hover:bg-brand-50 px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50 capitalize">
+                              {quickConnecting ? "Connecting…" : `Use ${p === "google" ? "Google Workspace" : p === "microsoft" ? "Microsoft Entra" : "Okta"}`}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    <IdPPanel onConnected={(users, provider, creds) => { setIdpUsers(users); setActiveProvider(provider); setActiveCredentials(creds); }} />
+                  </div>
+                )}
+              </div>
             )}
             {mode === "full" && fullTab === "report" && (
               <ReportPanel policyResult={policyResult} idpUsers={idpUsers} provider={activeProvider} credentials={activeCredentials} />
