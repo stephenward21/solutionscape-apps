@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo } from "react";
 import type { BasicAIReport, AIToolProfile, AIRiskLevel, UserActivity, IdPProvider } from "@/lib/types";
 import type { OrgVerticalConfig } from "@/lib/verticals";
 import { loadOrgConfig } from "./VerticalConfigPanel";
-import { saveScanReport } from "@/lib/scan-history";
+import { saveScanReport, listScanSummaries, getScanReport } from "@/lib/scan-history";
 import { VERTICAL_DEFINITIONS } from "@/lib/verticals";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -68,6 +68,26 @@ export default function BasicScanPanel({ idpUsers, provider, credentials }: Basi
   const [notifyConfigOpen, setNotifyConfigOpen] = useState(false);
 
   useEffect(() => { setOrgConfig(loadOrgConfig()); }, []);
+
+  // Load most recent saved scan on mount so the panel never starts blank
+  useEffect(() => {
+    async function loadLatest() {
+      if (window.electronAPI) {
+        const list = await window.electronAPI.reports.list();
+        if (list.length > 0) {
+          const latest = await window.electronAPI.reports.get(list[0].id);
+          if (latest) setReport(latest);
+        }
+      } else {
+        const summaries = listScanSummaries();
+        if (summaries.length > 0) {
+          const latest = getScanReport(summaries[0].id);
+          if (latest) setReport(latest);
+        }
+      }
+    }
+    void loadLatest();
+  }, []);
 
   // ── Scan ──────────────────────────────────────────────────────────────────────
 

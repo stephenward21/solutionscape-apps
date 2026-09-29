@@ -332,12 +332,29 @@ interface ReportPanelProps {
   credentials?: Record<string, string>;
 }
 
+// ─── Compliance report persistence ───────────────────────────────────────────
+
+const COMPLIANCE_KEY = "ss:compliance-report";
+
+function saveComplianceReport(r: GovernanceReport) {
+  try { localStorage.setItem(COMPLIANCE_KEY, JSON.stringify(r)); } catch {}
+}
+function loadComplianceReport(): GovernanceReport | null {
+  try {
+    const s = typeof window !== "undefined" ? localStorage.getItem(COMPLIANCE_KEY) : null;
+    return s ? JSON.parse(s) as GovernanceReport : null;
+  } catch { return null; }
+}
+function clearComplianceReport() {
+  try { localStorage.removeItem(COMPLIANCE_KEY); } catch {}
+}
+
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export default function ReportPanel({ policyResult, idpUsers, provider, credentials }: ReportPanelProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError]     = useState<string | null>(null);
-  const [report, setReport]   = useState<GovernanceReport | null>(null);
+  const [report, setReport]   = useState<GovernanceReport | null>(() => loadComplianceReport());
 
   // Tabs
   const [tab, setTab]                 = useState<ReportTab>("summary");
@@ -365,6 +382,7 @@ export default function ReportPanel({ policyResult, idpUsers, provider, credenti
       const data = await res.json() as GovernanceReport & { error?: string };
       if (!res.ok || data.error) throw new Error(data.error ?? "Report generation failed");
       setReport(data);
+      saveComplianceReport(data);
       setTab("summary");
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -511,7 +529,7 @@ export default function ReportPanel({ policyResult, idpUsers, provider, credenti
           <button onClick={() => openPrintWindow(report)} className="text-xs border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 px-3 py-1.5 rounded-lg transition-colors">
             Print / PDF
           </button>
-          <button onClick={() => { setReport(null); }} className="text-xs border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 px-3 py-1.5 rounded-lg transition-colors">
+          <button onClick={() => { setReport(null); clearComplianceReport(); }} className="text-xs border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 px-3 py-1.5 rounded-lg transition-colors">
             Regenerate
           </button>
         </div>
