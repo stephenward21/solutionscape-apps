@@ -25,28 +25,34 @@ export default function Dashboard() {
   const initTab = searchParams.get("tab");
   const modeParam = searchParams.get("mode");
 
-  const initMode: Mode = (() => {
-    if (modeParam === "compliance" || initTab === "policy" || initTab === "idp" || initTab === "report") return "full";
-    if (modeParam === "discovery") return "basic";
-    try {
-      if (typeof window !== "undefined") {
-        const saved = localStorage.getItem("ss:lastMode");
-        if (saved === "full" || saved === "basic") return saved as Mode;
-      }
-    } catch {}
-    return "basic";
-  })();
+  // Initialize from URL params only so SSR and client render match
+  const urlMode: Mode =
+    modeParam === "compliance" || initTab === "policy" || initTab === "idp" || initTab === "report"
+      ? "full"
+      : "basic";
 
-  const [mode, setMode] = useState<Mode>(initMode);
+  const [mode, setMode] = useState<Mode>(urlMode);
   const [fullTab, setFullTab] = useState<FullTab>(
     (initTab as FullTab | null) && ["policy", "idp", "report"].includes(initTab!)
       ? (initTab as FullTab)
       : "policy"
   );
 
-  const [settingsHintDismissed, setSettingsHintDismissed] = useState(() => {
-    try { return typeof window !== "undefined" && localStorage.getItem("ss:settingsHintDismissed") === "1"; } catch { return false; }
-  });
+  const [settingsHintDismissed, setSettingsHintDismissed] = useState(false);
+
+  // After hydration, restore last mode and hint state from localStorage
+  useEffect(() => {
+    if (!modeParam && !initTab) {
+      try {
+        const saved = localStorage.getItem("ss:lastMode");
+        if (saved === "full" || saved === "basic") setMode(saved as Mode);
+      } catch {}
+    }
+    try {
+      setSettingsHintDismissed(localStorage.getItem("ss:settingsHintDismissed") === "1");
+    } catch {}
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // ── Session-persistent state — survives navigation, cleared on explicit Disconnect/Clear ──
   const [policyResult, setPolicyResult] = useState<PolicyAnalysisResult | null>(() => {
@@ -204,33 +210,28 @@ export default function Dashboard() {
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8 space-y-4">
 
-        {/* ── Compact mode selector + breadcrumb ─────────────────────────── */}
-        <div className="flex items-center gap-3">
-          <div className="flex items-center bg-slate-100 rounded-xl p-1 gap-0.5">
-            <button
-              onClick={() => switchMode("basic")}
-              className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-all ${
-                mode === "basic"
-                  ? "bg-white shadow-sm text-teal-700"
-                  : "text-slate-500 hover:text-slate-700"
-              }`}
-            >
-              <span>🔍</span>
-              AI Discovery
-              {mode === "basic" && <span className="w-1.5 h-1.5 rounded-full bg-teal-500 ml-0.5" />}
-            </button>
-            <button
-              onClick={() => switchMode("full")}
-              className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-all ${
-                mode === "full"
-                  ? "bg-white shadow-sm text-brand-700"
-                  : "text-slate-500 hover:text-slate-700"
-              }`}
-            >
-              <span>📋</span>
-              Policy Compliance
-              {mode === "full" && <span className="w-1.5 h-1.5 rounded-full bg-brand-500 ml-0.5" />}
-            </button>
+        {/* ── Module selector ──────────────────────────────────────────────── */}
+        <div className="flex items-center gap-4">
+          <div className="flex items-center gap-3">
+            <label htmlFor="module-select" className="text-xs font-semibold text-slate-500 uppercase tracking-wide whitespace-nowrap">
+              Module
+            </label>
+            <div className="relative">
+              <select
+                id="module-select"
+                value={mode}
+                onChange={(e) => switchMode(e.target.value as Mode)}
+                className="appearance-none bg-white border border-slate-200 text-slate-800 text-sm font-medium rounded-xl pl-3 pr-8 py-2 cursor-pointer hover:border-slate-300 focus:outline-none focus:ring-2 focus:ring-brand-500 transition-colors shadow-sm"
+              >
+                <option value="basic">🔍  AI Discovery</option>
+                <option value="full">📋  Policy Compliance Review</option>
+              </select>
+              <div className="pointer-events-none absolute inset-y-0 right-2.5 flex items-center">
+                <svg className="w-3.5 h-3.5 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                </svg>
+              </div>
+            </div>
           </div>
           <Link href="/" className="ml-auto text-xs text-slate-400 hover:text-slate-600 flex items-center gap-1 transition-colors shrink-0">
             <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
