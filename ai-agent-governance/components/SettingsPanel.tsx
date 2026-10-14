@@ -483,7 +483,6 @@ export default function SettingsPanel() {
       <ApiKeySection />
       <IdPCredsSection />
       <ScheduleSection />
-      <ReportHistorySection />
     </div>
   );
 }

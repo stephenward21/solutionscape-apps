@@ -24,11 +24,18 @@ export default function Dashboard() {
 
   const initTab = searchParams.get("tab");
   const modeParam = searchParams.get("mode");
-  const hideSelector = !!modeParam;
-  const initMode: Mode =
-    modeParam === "compliance" || initTab === "policy" || initTab === "idp" || initTab === "report"
-      ? "full"
-      : "basic";
+
+  const initMode: Mode = (() => {
+    if (modeParam === "compliance" || initTab === "policy" || initTab === "idp" || initTab === "report") return "full";
+    if (modeParam === "discovery") return "basic";
+    try {
+      if (typeof window !== "undefined") {
+        const saved = localStorage.getItem("ss:lastMode");
+        if (saved === "full" || saved === "basic") return saved as Mode;
+      }
+    } catch {}
+    return "basic";
+  })();
 
   const [mode, setMode] = useState<Mode>(initMode);
   const [fullTab, setFullTab] = useState<FullTab>(
@@ -36,6 +43,10 @@ export default function Dashboard() {
       ? (initTab as FullTab)
       : "policy"
   );
+
+  const [settingsHintDismissed, setSettingsHintDismissed] = useState(() => {
+    try { return typeof window !== "undefined" && localStorage.getItem("ss:settingsHintDismissed") === "1"; } catch { return false; }
+  });
 
   // ── Session-persistent state — survives navigation, cleared on explicit Disconnect/Clear ──
   const [policyResult, setPolicyResult] = useState<PolicyAnalysisResult | null>(() => {
@@ -121,7 +132,13 @@ export default function Dashboard() {
 
   function switchMode(m: Mode) {
     setMode(m);
+    try { localStorage.setItem("ss:lastMode", m); } catch {}
     router.replace(`/dashboard?tab=${m === "basic" ? "discovery" : fullTab}`, { scroll: false });
+  }
+
+  function dismissSettingsHint() {
+    setSettingsHintDismissed(true);
+    try { localStorage.setItem("ss:settingsHintDismissed", "1"); } catch {}
   }
 
   function switchFullTab(tab: FullTab) {
@@ -187,114 +204,72 @@ export default function Dashboard() {
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8 space-y-4">
 
-        {/* ── Mode selector (hidden when navigating from homepage) ──────── */}
-        {hideSelector && (
-          <div className="flex items-center gap-2">
-            <Link href="/" className="text-xs text-slate-400 hover:text-slate-600 flex items-center gap-1 transition-colors">
-              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+        {/* ── Compact mode selector + breadcrumb ─────────────────────────── */}
+        <div className="flex items-center gap-3">
+          <div className="flex items-center bg-slate-100 rounded-xl p-1 gap-0.5">
+            <button
+              onClick={() => switchMode("basic")}
+              className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-all ${
+                mode === "basic"
+                  ? "bg-white shadow-sm text-teal-700"
+                  : "text-slate-500 hover:text-slate-700"
+              }`}
+            >
+              <span>🔍</span>
+              AI Discovery
+              {mode === "basic" && <span className="w-1.5 h-1.5 rounded-full bg-teal-500 ml-0.5" />}
+            </button>
+            <button
+              onClick={() => switchMode("full")}
+              className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-all ${
+                mode === "full"
+                  ? "bg-white shadow-sm text-brand-700"
+                  : "text-slate-500 hover:text-slate-700"
+              }`}
+            >
+              <span>📋</span>
+              Policy Compliance
+              {mode === "full" && <span className="w-1.5 h-1.5 rounded-full bg-brand-500 ml-0.5" />}
+            </button>
+          </div>
+          <Link href="/" className="ml-auto text-xs text-slate-400 hover:text-slate-600 flex items-center gap-1 transition-colors shrink-0">
+            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+            </svg>
+            Home
+          </Link>
+        </div>
+
+        {/* ── Settings hint (dismissible, first-time) ──────────────────────── */}
+        {!settingsHintDismissed && (
+          <div className="bg-brand-50 border border-brand-200 rounded-xl px-4 py-3 flex items-start gap-3">
+            <div className="w-8 h-8 rounded-lg bg-white border border-brand-200 flex items-center justify-center shrink-0 mt-0.5">
+              <svg className="w-4 h-4 text-brand-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.75}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
               </svg>
-              Home
-            </Link>
-            <span className="text-slate-200">/</span>
-            <span className="text-xs text-slate-500 font-medium">
-              {mode === "basic" ? "AI Discovery" : "Policy Compliance"}
-            </span>
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-semibold text-brand-800 mb-0.5">Set up your workspace in Settings</p>
+              <p className="text-xs text-brand-700 leading-relaxed">
+                Configure your <span className="font-medium">organization profile</span> for industry-specific risk scoring,
+                add your <span className="font-medium">Anthropic API key</span>, save <span className="font-medium">directory credentials</span> for quick reconnect, and schedule <span className="font-medium">automated scans</span>.{" "}
+                <Link href="/settings" className="underline font-semibold hover:text-brand-900 transition-colors">
+                  Open Settings →
+                </Link>
+              </p>
+            </div>
+            <button
+              onClick={dismissSettingsHint}
+              className="text-brand-400 hover:text-brand-600 transition-colors p-1 shrink-0"
+              title="Dismiss"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
           </div>
         )}
-        {!hideSelector && <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-
-          {/* Basic — AI Discovery */}
-          <button
-            onClick={() => switchMode("basic")}
-            className={`text-left rounded-2xl border-2 p-5 transition-all ${
-              mode === "basic"
-                ? "border-teal-500 bg-teal-50 shadow-sm"
-                : "border-slate-200 bg-white hover:border-slate-300 hover:shadow-sm"
-            }`}
-          >
-            <div className="flex items-start gap-3">
-              <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 text-xl ${
-                mode === "basic" ? "bg-teal-100" : "bg-slate-100"
-              }`}>
-                🔍
-              </div>
-              <div className="min-w-0">
-                <div className="flex items-center gap-2 mb-0.5">
-                  <span className={`text-sm font-semibold ${mode === "basic" ? "text-teal-700" : "text-slate-800"}`}>
-                    AI Discovery
-                  </span>
-                  <span className="text-xs bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded-full font-medium">
-                    Quick start
-                  </span>
-                </div>
-                <p className="text-xs text-slate-500 leading-relaxed">
-                  See every AI tool your team is using, what it does, and how risky it is.
-                  No policy needed — ideal if you&apos;re just getting started.
-                </p>
-                <div className="flex flex-wrap gap-2 mt-2.5">
-                  {["Connect directory", "AI tool inventory", "Risk scores"].map((t) => (
-                    <span key={t} className="text-xs bg-white border border-slate-200 text-slate-500 px-2 py-0.5 rounded-full">
-                      {t}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            </div>
-            {mode === "basic" && (
-              <div className="mt-3 pt-3 border-t border-teal-200 flex items-center gap-1.5">
-                <span className="w-1.5 h-1.5 rounded-full bg-teal-500" />
-                <span className="text-xs font-medium text-teal-600">Active</span>
-              </div>
-            )}
-          </button>
-
-          {/* Full — AI Policy Compliance */}
-          <button
-            onClick={() => switchMode("full")}
-            className={`text-left rounded-2xl border-2 p-5 transition-all ${
-              mode === "full"
-                ? "border-brand-500 bg-brand-50 shadow-sm"
-                : "border-slate-200 bg-white hover:border-slate-300 hover:shadow-sm"
-            }`}
-          >
-            <div className="flex items-start gap-3">
-              <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 text-xl ${
-                mode === "full" ? "bg-brand-100" : "bg-slate-100"
-              }`}>
-                📋
-              </div>
-              <div className="min-w-0">
-                <div className="flex items-center gap-2 mb-0.5">
-                  <span className={`text-sm font-semibold ${mode === "full" ? "text-brand-700" : "text-slate-800"}`}>
-                    Policy Compliance Review
-                  </span>
-                  <span className="text-xs bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded-full font-medium">
-                    3 steps
-                  </span>
-                </div>
-                <p className="text-xs text-slate-500 leading-relaxed">
-                  Upload your AI acceptable use policy, connect your directory, and get a
-                  per-user compliance report showing who is in breach and why.
-                </p>
-                <div className="flex flex-wrap gap-2 mt-2.5">
-                  {["Upload policy", "Connect directory", "Compliance report"].map((t, i) => (
-                    <span key={t} className="flex items-center gap-1 text-xs bg-white border border-slate-200 text-slate-500 px-2 py-0.5 rounded-full">
-                      <span className="text-slate-300 font-mono">{i + 1}</span>
-                      {t}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            </div>
-            {mode === "full" && (
-              <div className="mt-3 pt-3 border-t border-brand-200 flex items-center gap-1.5">
-                <span className="w-1.5 h-1.5 rounded-full bg-brand-500" />
-                <span className="text-xs font-medium text-brand-600">Active</span>
-              </div>
-            )}
-          </button>
-        </div>}
 
         {/* ── Content card ──────────────────────────────────────────────── */}
         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm">

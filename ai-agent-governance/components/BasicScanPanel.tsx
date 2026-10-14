@@ -67,27 +67,49 @@ export default function BasicScanPanel({ idpUsers, provider, credentials }: Basi
   const [notifyConfig, setNotifyConfig] = useState<NotifyConfig>({ channel: "email" });
   const [notifyConfigOpen, setNotifyConfigOpen] = useState(false);
 
+  // Scan history
+  type ScanHistoryItem = { id: string; generatedAt: string; totalUsers: number; totalTools: number; criticalTools: number; highRiskTools: number };
+  const [scanHistory, setScanHistory] = useState<ScanHistoryItem[]>([]);
+  const [historyOpen, setHistoryOpen] = useState(false);
+
   useEffect(() => { setOrgConfig(loadOrgConfig()); }, []);
 
-  // Load most recent saved scan on mount so the panel never starts blank
+  // Load most recent saved scan and history on mount; refresh after each save
   useEffect(() => {
-    async function loadLatest() {
-      if (window.electronAPI) {
-        const list = await window.electronAPI.reports.list();
-        if (list.length > 0) {
-          const latest = await window.electronAPI.reports.get(list[0].id);
-          if (latest) setReport(latest);
-        }
-      } else {
-        const summaries = listScanSummaries();
-        if (summaries.length > 0) {
-          const latest = getScanReport(summaries[0].id);
-          if (latest) setReport(latest);
-        }
+    void loadHistory(true);
+    const onSaved = () => void loadHistory(false);
+    window.addEventListener("ss:scan-saved", onSaved);
+    return () => window.removeEventListener("ss:scan-saved", onSaved);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  async function loadHistory(andRestoreLatest: boolean) {
+    if (window.electronAPI) {
+      const list = await window.electronAPI.reports.list();
+      setScanHistory(list);
+      if (andRestoreLatest && list.length > 0) {
+        const latest = await window.electronAPI.reports.get(list[0].id);
+        if (latest) setReport(latest);
+      }
+    } else {
+      const summaries = listScanSummaries() as ScanHistoryItem[];
+      setScanHistory(summaries);
+      if (andRestoreLatest && summaries.length > 0) {
+        const latest = getScanReport(summaries[0].id);
+        if (latest) setReport(latest);
       }
     }
-    void loadLatest();
-  }, []);
+  }
+
+  async function loadHistoryScan(id: string) {
+    if (window.electronAPI) {
+      const scan = await window.electronAPI.reports.get(id);
+      if (scan) { setReport(scan); setHistoryOpen(false); setTab("summary"); }
+    } else {
+      const scan = getScanReport(id);
+      if (scan) { setReport(scan); setHistoryOpen(false); setTab("summary"); }
+    }
+  }
 
   // ── Scan ──────────────────────────────────────────────────────────────────────
 
@@ -107,6 +129,7 @@ export default function BasicScanPanel({ idpUsers, provider, credentials }: Basi
       if (typeof window !== "undefined") {
         if (window.electronAPI) {
           await window.electronAPI.reports.save(data);
+          void loadHistory(false);
         } else {
           saveScanReport(data);
           window.dispatchEvent(new CustomEvent("ss:scan-saved"));
@@ -247,12 +270,50 @@ export default function BasicScanPanel({ idpUsers, provider, credentials }: Basi
             {orgConfig?.frameworks.length ? ` · ${orgConfig.frameworks.length} frameworks applied` : ""}
           </p>
         </div>
-        <button
-          onClick={() => { setReport(null); }}
-          className="text-xs border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 px-3 py-1.5 rounded-lg transition-colors shrink-0"
-        >
-          Re-scan
-        </button>
+        <div className="flex items-center gap-2 shrink-0">
+          {scanHistory.length > 1 && (
+            <div className="relative">
+              <button
+                onClick={() => setHistoryOpen((o) => !o)}
+                className="text-xs border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5"
+              >
+                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                History ({scanHistory.length})
+                <svg className={`w-3 h-3 transition-transform ${historyOpen ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
+              {historyOpen && (
+                <div className="absolute right-0 top-full mt-1 w-72 bg-white border border-slate-200 rounded-xl shadow-lg z-10 overflow-hidden">
+                  {scanHistory.map((s) => (
+                    <button
+                      key={s.id}
+                      onClick={() => void loadHistoryScan(s.id)}
+                      className={`w-full text-left px-4 py-3 hover:bg-slate-50 transition-colors border-b border-slate-100 last:border-0 ${
+                        report.generatedAt === s.generatedAt ? "bg-brand-50" : ""
+                      }`}
+                    >
+                      <p className="text-xs font-medium text-slate-700">{new Date(s.generatedAt).toLocaleString()}</p>
+                      <p className="text-xs text-slate-400 mt-0.5">
+                        {s.totalUsers} users · {s.totalTools} AI tools
+                        {s.criticalTools > 0 && <span className="text-rose-600"> · {s.criticalTools} critical</span>}
+                        {s.highRiskTools > 0 && <span className="text-orange-500"> · {s.highRiskTools} high</span>}
+                      </p>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+          <button
+            onClick={() => { setReport(null); }}
+            className="text-xs border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 px-3 py-1.5 rounded-lg transition-colors"
+          >
+            Re-scan
+          </button>
+        </div>
       </div>
 
       {/* KPI strip */}
